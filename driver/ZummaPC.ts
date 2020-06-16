@@ -16,9 +16,6 @@ import * as Meta from "system_lib/Metadata";
  */
 @Meta.driver('NetworkTCP', { port: 32401 })
 export class ZummaPC extends Driver<NetworkTCP> {
-	// IMPORTANT: The class name above MUST match the name of the
-	// file (minus its extension).
-
     private powerState: boolean;
 
 	private poweringUp: Promise<void>;	// Set while waiting to be powered up

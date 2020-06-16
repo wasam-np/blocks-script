@@ -1,7 +1,10 @@
 var __extends = (this && this.__extends) || (function () {
-    var extendStatics = Object.setPrototypeOf ||
-        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    };
     return function (d, b) {
         extendStatics(d, b);
         function __() { this.constructor = d; }
@@ -23,6 +26,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], function (require, exports, Driver_1, Meta) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
+    exports.ZummaPC = void 0;
     var ZummaPC = (function (_super) {
         __extends(ZummaPC, _super);
         function ZummaPC(socket) {
@@ -42,7 +46,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             set: function (online) {
                 this.connectedToZumma = online;
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         ZummaPC.prototype.sendText = function (text) {
@@ -64,14 +68,14 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                         this.powerDown();
                 }
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         Object.defineProperty(ZummaPC.prototype, "online", {
             get: function () {
                 return this.socket.connected;
             },
-            enumerable: true,
+            enumerable: false,
             configurable: true
         });
         ZummaPC.prototype.powerUp = function () {
