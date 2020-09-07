@@ -23,10 +23,13 @@ const TYPE_BOOLEAN = 'boolean';
 const TYPE_NUMBER = 'number';
 const TYPE_STRING = 'string';
 
+const BOOLEAN_TRUE = 'True';
+
 @driver('NetworkUDP', { port: 12543 })
 export class UnityConnection extends Driver<NetworkUDP> {
 
     private typesByName = {};
+    // private valuesByName = {};
 
 	public constructor(private socket: NetworkUDP) {
 		super(socket);
@@ -48,27 +51,35 @@ export class UnityConnection extends Driver<NetworkUDP> {
                 case PAYLOAD_TYPE_VARIABLE:
                     var json = message.text.substr(PAYLOAD_TYPE_VARIABLE.length);
                     var bv : BlocksVariable = JSON.parse(json);
-                    var type = this.typesByName[bv.Name];
-                    var name = this.renderVariableName(bv.Name);
-                    switch (type)
-                    {
-                        case TYPE_BOOLEAN:
-                            this[name] = bv.Value == 'True';
-                        break;
-                        case TYPE_NUMBER:
-                            this[name] = Number(bv.Value);
-                        break;
-                        case TYPE_STRING:
-                            this[name] = bv.Value;
-                        break;
-                    }
-
+                    this.updateVariable(bv);
                 break;
             }
 		});
 	}
 
+    private updateVariable (bv: BlocksVariable) {
+        var name = this.renderVariableName(bv.Name);
+        var type = this.typesByName[name];
+        switch (type)
+        {
+            case TYPE_BOOLEAN:
+                this[name] = bv.Value == BOOLEAN_TRUE;
+            break;
+            case TYPE_NUMBER:
+                this[name] = Number(bv.Value);
+            break;
+            case TYPE_STRING:
+                this[name] = bv.Value;
+            break;
+        }
+    }
     private registerVariable (bvc: BlocksVariableContainer) {
+        var name = this.renderVariableName(bvc.Variable.Name);
+        if (this.typesByName[name])
+        {
+            this.updateVariable(bvc.Variable);
+            return;
+        }
         switch (bvc.Description.Type)
         {
             case TYPE_BOOLEAN:
@@ -81,20 +92,25 @@ export class UnityConnection extends Driver<NetworkUDP> {
                 this.registerStringVariable(bvc);
             break;
         }
-        this.typesByName[bvc.Variable.Name] = bvc.Description.Type;
     }
     private renderVariableName (name: string) : string {
-        return name;
+        return '_' + name;
     }
     private registerStringVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
-        var options = {type: String, description: bvc.Description.Description, readOnly: bvc.Description.ReadOnly};
-        this.property<string>(name, options, (sv) => {
-            if (sv !== undefined) {
-                if (bvc.Variable.Value !== sv) {
-                    bvc.Variable.Value = sv;
-                    // console.log(bvc.Variable.Name, sv);
-                    this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+        this.typesByName[name] = TYPE_STRING;
+        var options = {
+            type: String,
+            description: bvc.Description.Description,
+            readOnly: bvc.Description.ReadOnly
+        };
+        var value: string = bvc.Variable.Value;
+        this.property<string>(name, options, (newValue) => {
+            if (newValue !== undefined) {
+                if (value !== newValue) {
+                    value = newValue;
+                    bvc.Variable.Value = newValue;
+                    this.sendVariable(bvc.Variable);
                 }
             }
             return bvc.Variable.Value;
@@ -102,6 +118,7 @@ export class UnityConnection extends Driver<NetworkUDP> {
     }
     private registerNumberVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
+        this.typesByName[name] = TYPE_NUMBER;
         var options : SGOptions = {
             type: Number,
             description: bvc.Description.Description,
@@ -111,35 +128,42 @@ export class UnityConnection extends Driver<NetworkUDP> {
         };
         var value : number = Number(bvc.Variable.Value);
         this.property<number>(name, options, (newValue) => {
-            if (newValue !== undefined) {
+            if (newValue !== undefined &&
+                typeof newValue === 'number' &&
+                isFinite(value)) {
                 if (value !== newValue) {
                     value = newValue;
                     bvc.Variable.Value = newValue.toString();
-                    this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+                    this.sendVariable(bvc.Variable);
                 }
             }
             return value;
         });
     }
     private registerBooleanVariable (bvc: BlocksVariableContainer) {
-        this.property<boolean>(bvc.Variable.Name, {type: Boolean, description: bvc.Description.Description, readOnly: bvc.Description.ReadOnly}, (sv) => {
-            if (sv !== undefined) {
-                if (bvc.Variable.Value !== sv.toString()) {
-                    bvc.Variable.Value = sv.toString();
-                    // console.log(variable.Name, sv);
-                    this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+        var name = this.renderVariableName(bvc.Variable.Name);
+        this.typesByName[name] = TYPE_BOOLEAN;
+        var options : SGOptions = {
+            type: Boolean,
+            description: bvc.Description.Description,
+            readOnly: bvc.Description.ReadOnly
+        };
+        var value: boolean = bvc.Variable.Value == BOOLEAN_TRUE;
+        this.property<boolean>(name, options, (newValue) => {
+            if (newValue !== undefined &&
+                typeof newValue === 'boolean') {
+                if (value !== newValue) {
+                    value = newValue;
+                    bvc.Variable.Value = newValue.toString();
+                    this.sendVariable(bvc.Variable);
                 }
             }
-            return bvc.Variable.Value == "True";
+            return value;
         });
     }
 
-    private sendVariable(name: string, value: string) {
-        var variable = {
-            Name: name,
-            Value: value
-        };
-        this.socket.sendText(PAYLOAD_TYPE_VARIABLE + JSON.stringify(variable));
+    private sendVariable(bv: BlocksVariable) {
+        this.socket.sendText(PAYLOAD_TYPE_VARIABLE + JSON.stringify(bv));
     }
 	private sendText(toSend: string) {
 		this.socket.sendText(toSend);

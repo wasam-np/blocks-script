@@ -31,6 +31,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
     var TYPE_BOOLEAN = 'boolean';
     var TYPE_NUMBER = 'number';
     var TYPE_STRING = 'string';
+    var BOOLEAN_TRUE = 'True';
     var UnityConnection = (function (_super) {
         __extends(UnityConnection, _super);
         function UnityConnection(socket) {
@@ -52,25 +53,33 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                     case PAYLOAD_TYPE_VARIABLE:
                         var json = message.text.substr(PAYLOAD_TYPE_VARIABLE.length);
                         var bv = JSON.parse(json);
-                        var type = _this.typesByName[bv.Name];
-                        var name = _this.renderVariableName(bv.Name);
-                        switch (type) {
-                            case TYPE_BOOLEAN:
-                                _this[name] = bv.Value == 'True';
-                                break;
-                            case TYPE_NUMBER:
-                                _this[name] = Number(bv.Value);
-                                break;
-                            case TYPE_STRING:
-                                _this[name] = bv.Value;
-                                break;
-                        }
+                        _this.updateVariable(bv);
                         break;
                 }
             });
             return _this;
         }
+        UnityConnection.prototype.updateVariable = function (bv) {
+            var name = this.renderVariableName(bv.Name);
+            var type = this.typesByName[name];
+            switch (type) {
+                case TYPE_BOOLEAN:
+                    this[name] = bv.Value == BOOLEAN_TRUE;
+                    break;
+                case TYPE_NUMBER:
+                    this[name] = Number(bv.Value);
+                    break;
+                case TYPE_STRING:
+                    this[name] = bv.Value;
+                    break;
+            }
+        };
         UnityConnection.prototype.registerVariable = function (bvc) {
+            var name = this.renderVariableName(bvc.Variable.Name);
+            if (this.typesByName[name]) {
+                this.updateVariable(bvc.Variable);
+                return;
+            }
             switch (bvc.Description.Type) {
                 case TYPE_BOOLEAN:
                     this.registerBooleanVariable(bvc);
@@ -82,20 +91,26 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                     this.registerStringVariable(bvc);
                     break;
             }
-            this.typesByName[bvc.Variable.Name] = bvc.Description.Type;
         };
         UnityConnection.prototype.renderVariableName = function (name) {
-            return name;
+            return '_' + name;
         };
         UnityConnection.prototype.registerStringVariable = function (bvc) {
             var _this = this;
             var name = this.renderVariableName(bvc.Variable.Name);
-            var options = { type: String, description: bvc.Description.Description, readOnly: bvc.Description.ReadOnly };
-            this.property(name, options, function (sv) {
-                if (sv !== undefined) {
-                    if (bvc.Variable.Value !== sv) {
-                        bvc.Variable.Value = sv;
-                        _this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+            this.typesByName[name] = TYPE_STRING;
+            var options = {
+                type: String,
+                description: bvc.Description.Description,
+                readOnly: bvc.Description.ReadOnly
+            };
+            var value = bvc.Variable.Value;
+            this.property(name, options, function (newValue) {
+                if (newValue !== undefined) {
+                    if (value !== newValue) {
+                        value = newValue;
+                        bvc.Variable.Value = newValue;
+                        _this.sendVariable(bvc.Variable);
                     }
                 }
                 return bvc.Variable.Value;
@@ -104,6 +119,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         UnityConnection.prototype.registerNumberVariable = function (bvc) {
             var _this = this;
             var name = this.renderVariableName(bvc.Variable.Name);
+            this.typesByName[name] = TYPE_NUMBER;
             var options = {
                 type: Number,
                 description: bvc.Description.Description,
@@ -113,11 +129,13 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             };
             var value = Number(bvc.Variable.Value);
             this.property(name, options, function (newValue) {
-                if (newValue !== undefined) {
+                if (newValue !== undefined &&
+                    typeof newValue === 'number' &&
+                    isFinite(value)) {
                     if (value !== newValue) {
                         value = newValue;
                         bvc.Variable.Value = newValue.toString();
-                        _this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+                        _this.sendVariable(bvc.Variable);
                     }
                 }
                 return value;
@@ -125,22 +143,28 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         };
         UnityConnection.prototype.registerBooleanVariable = function (bvc) {
             var _this = this;
-            this.property(bvc.Variable.Name, { type: Boolean, description: bvc.Description.Description, readOnly: bvc.Description.ReadOnly }, function (sv) {
-                if (sv !== undefined) {
-                    if (bvc.Variable.Value !== sv.toString()) {
-                        bvc.Variable.Value = sv.toString();
-                        _this.sendVariable(bvc.Variable.Name, bvc.Variable.Value);
+            var name = this.renderVariableName(bvc.Variable.Name);
+            this.typesByName[name] = TYPE_BOOLEAN;
+            var options = {
+                type: Boolean,
+                description: bvc.Description.Description,
+                readOnly: bvc.Description.ReadOnly
+            };
+            var value = bvc.Variable.Value == BOOLEAN_TRUE;
+            this.property(name, options, function (newValue) {
+                if (newValue !== undefined &&
+                    typeof newValue === 'boolean') {
+                    if (value !== newValue) {
+                        value = newValue;
+                        bvc.Variable.Value = newValue.toString();
+                        _this.sendVariable(bvc.Variable);
                     }
                 }
-                return bvc.Variable.Value == "True";
+                return value;
             });
         };
-        UnityConnection.prototype.sendVariable = function (name, value) {
-            var variable = {
-                Name: name,
-                Value: value
-            };
-            this.socket.sendText(PAYLOAD_TYPE_VARIABLE + JSON.stringify(variable));
+        UnityConnection.prototype.sendVariable = function (bv) {
+            this.socket.sendText(PAYLOAD_TYPE_VARIABLE + JSON.stringify(bv));
         };
         UnityConnection.prototype.sendText = function (toSend) {
             this.socket.sendText(toSend);
