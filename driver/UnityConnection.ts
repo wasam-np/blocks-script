@@ -28,8 +28,8 @@ const BOOLEAN_TRUE = 'True';
 @driver('NetworkUDP', { port: 12543 })
 export class UnityConnection extends Driver<NetworkUDP> {
 
-    private typesByName = {};
-    // private valuesByName = {};
+    private typesByName: Dictionary<string> = {};
+    private variablesByName: Dictionary<BlocksVariable> = {};
 
 	public constructor(private socket: NetworkUDP) {
 		super(socket);
@@ -75,11 +75,14 @@ export class UnityConnection extends Driver<NetworkUDP> {
     }
     private registerVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
-        if (this.typesByName[name])
+        var variable = this.variablesByName[name];
+        if (variable)
         {
-            this.updateVariable(bvc.Variable);
+            this.sendVariable(variable);
             return;
         }
+        this.typesByName[name] = bvc.Description.Type;
+        this.variablesByName[name] = bvc.Variable;
         switch (bvc.Description.Type)
         {
             case TYPE_BOOLEAN:
@@ -98,7 +101,6 @@ export class UnityConnection extends Driver<NetworkUDP> {
     }
     private registerStringVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
-        this.typesByName[name] = TYPE_STRING;
         var options = {
             type: String,
             description: bvc.Description.Description,
@@ -109,8 +111,8 @@ export class UnityConnection extends Driver<NetworkUDP> {
             if (newValue !== undefined) {
                 if (value !== newValue) {
                     value = newValue;
-                    bvc.Variable.Value = newValue;
-                    this.sendVariable(bvc.Variable);
+                    this.variablesByName[name].Value = newValue;
+                    this.sendVariable(this.variablesByName[name]);
                 }
             }
             return bvc.Variable.Value;
@@ -118,7 +120,6 @@ export class UnityConnection extends Driver<NetworkUDP> {
     }
     private registerNumberVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
-        this.typesByName[name] = TYPE_NUMBER;
         var options : SGOptions = {
             type: Number,
             description: bvc.Description.Description,
@@ -133,8 +134,8 @@ export class UnityConnection extends Driver<NetworkUDP> {
                 isFinite(value)) {
                 if (value !== newValue) {
                     value = newValue;
-                    bvc.Variable.Value = newValue.toString();
-                    this.sendVariable(bvc.Variable);
+                    this.variablesByName[name].Value = newValue.toString();
+                    this.sendVariable(this.variablesByName[name]);
                 }
             }
             return value;
@@ -142,7 +143,6 @@ export class UnityConnection extends Driver<NetworkUDP> {
     }
     private registerBooleanVariable (bvc: BlocksVariableContainer) {
         var name = this.renderVariableName(bvc.Variable.Name);
-        this.typesByName[name] = TYPE_BOOLEAN;
         var options : SGOptions = {
             type: Boolean,
             description: bvc.Description.Description,
@@ -150,12 +150,11 @@ export class UnityConnection extends Driver<NetworkUDP> {
         };
         var value: boolean = bvc.Variable.Value == BOOLEAN_TRUE;
         this.property<boolean>(name, options, (newValue) => {
-            if (newValue !== undefined &&
-                typeof newValue === 'boolean') {
+            if (newValue !== undefined) {
                 if (value !== newValue) {
                     value = newValue;
-                    bvc.Variable.Value = newValue.toString();
-                    this.sendVariable(bvc.Variable);
+                    this.variablesByName[name].Value = newValue ? 'True' : 'False';
+                    this.sendVariable(this.variablesByName[name]);
                 }
             }
             return value;
@@ -188,4 +187,7 @@ class BlocksVariableContainer
 {
     public Variable: BlocksVariable;
     public Description: BlocksVariableDescription;
+}
+interface Dictionary<Group> {
+    [id: string]: Group;
 }

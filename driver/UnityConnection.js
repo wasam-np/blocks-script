@@ -38,6 +38,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             var _this = _super.call(this, socket) || this;
             _this.socket = socket;
             _this.typesByName = {};
+            _this.variablesByName = {};
             _this.sendText(PAYLOAD_TYPE_VARIABLE_REGISTRY_REQUEST);
             socket.subscribe('textReceived', function (sender, message) {
                 var text = message.text;
@@ -76,10 +77,13 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         };
         UnityConnection.prototype.registerVariable = function (bvc) {
             var name = this.renderVariableName(bvc.Variable.Name);
-            if (this.typesByName[name]) {
-                this.updateVariable(bvc.Variable);
+            var variable = this.variablesByName[name];
+            if (variable) {
+                this.sendVariable(variable);
                 return;
             }
+            this.typesByName[name] = bvc.Description.Type;
+            this.variablesByName[name] = bvc.Variable;
             switch (bvc.Description.Type) {
                 case TYPE_BOOLEAN:
                     this.registerBooleanVariable(bvc);
@@ -98,7 +102,6 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         UnityConnection.prototype.registerStringVariable = function (bvc) {
             var _this = this;
             var name = this.renderVariableName(bvc.Variable.Name);
-            this.typesByName[name] = TYPE_STRING;
             var options = {
                 type: String,
                 description: bvc.Description.Description,
@@ -109,8 +112,8 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                 if (newValue !== undefined) {
                     if (value !== newValue) {
                         value = newValue;
-                        bvc.Variable.Value = newValue;
-                        _this.sendVariable(bvc.Variable);
+                        _this.variablesByName[name].Value = newValue;
+                        _this.sendVariable(_this.variablesByName[name]);
                     }
                 }
                 return bvc.Variable.Value;
@@ -119,7 +122,6 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         UnityConnection.prototype.registerNumberVariable = function (bvc) {
             var _this = this;
             var name = this.renderVariableName(bvc.Variable.Name);
-            this.typesByName[name] = TYPE_NUMBER;
             var options = {
                 type: Number,
                 description: bvc.Description.Description,
@@ -134,8 +136,8 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                     isFinite(value)) {
                     if (value !== newValue) {
                         value = newValue;
-                        bvc.Variable.Value = newValue.toString();
-                        _this.sendVariable(bvc.Variable);
+                        _this.variablesByName[name].Value = newValue.toString();
+                        _this.sendVariable(_this.variablesByName[name]);
                     }
                 }
                 return value;
@@ -144,7 +146,6 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         UnityConnection.prototype.registerBooleanVariable = function (bvc) {
             var _this = this;
             var name = this.renderVariableName(bvc.Variable.Name);
-            this.typesByName[name] = TYPE_BOOLEAN;
             var options = {
                 type: Boolean,
                 description: bvc.Description.Description,
@@ -152,12 +153,11 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             };
             var value = bvc.Variable.Value == BOOLEAN_TRUE;
             this.property(name, options, function (newValue) {
-                if (newValue !== undefined &&
-                    typeof newValue === 'boolean') {
+                if (newValue !== undefined) {
                     if (value !== newValue) {
                         value = newValue;
-                        bvc.Variable.Value = newValue.toString();
-                        _this.sendVariable(bvc.Variable);
+                        _this.variablesByName[name].Value = newValue ? 'True' : 'False';
+                        _this.sendVariable(_this.variablesByName[name]);
                     }
                 }
                 return value;
