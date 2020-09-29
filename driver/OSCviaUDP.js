@@ -59,7 +59,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                 tags: ',',
                 bytes: []
             };
-            this.parseValueList(valueList, tagsAndBytes);
+            this.parseValueList(valueList ? valueList : '', tagsAndBytes);
             var bytes = [];
             this.addRange(bytes, this.toOSCStringBytes(address));
             this.addRange(bytes, this.toOSCStringBytes(tagsAndBytes['tags']));
@@ -121,8 +121,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         };
         OSCviaUDP.prototype.addFloat = function (value, valueString, tagsAndBytes) {
             var abs = Math.abs(value);
-            if (abs > MIN_ABS_FLOAT32 &&
-                valueString.length <= 7) {
+            if (valueString.length <= 7) {
                 tagsAndBytes['tags'] += OSC_TYPE_TAG_FLOAT32;
                 this.addRange(tagsAndBytes['bytes'], this.getFloat32Bytes(value));
             }
@@ -215,7 +214,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         __decorate([
             Meta.callable('send OSC message'),
             __param(0, Meta.parameter('OSC address')),
-            __param(1, Meta.parameter('Comma separated value list. fx to send the values 1 (int), 2.0 (float), and "hello" (string) "1, 2.0, \'hello\'".')),
+            __param(1, Meta.parameter('Comma separated value list. fx to send the values 1 (int), 2.0 (float), and "hello" (string) "1, 2.0, \'hello\'".', true)),
             __metadata("design:type", Function),
             __metadata("design:paramtypes", [String, String]),
             __metadata("design:returntype", void 0)
