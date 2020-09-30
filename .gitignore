@@ -4,3 +4,7 @@ system/*.js
 node_modules
 
 user/*.js
+
+files/pjlinkplus.config/
+
+files/pjlinkplus.cache/
