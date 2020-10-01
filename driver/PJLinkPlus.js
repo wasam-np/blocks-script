@@ -637,7 +637,7 @@ define(["require", "exports", "driver/NetworkProjector", "system_lib/Metadata", 
                     (this._lampCount > 2 ? 'Lamp three: ' + (this._lampThreeActive ? 'on' : 'off') + ', ' + this._lampThreeHours + ' lighting hours' + this._lineBreak : '') +
                     (this._lampCount > 3 ? 'Lamp four: ' + (this._lampFourActive ? 'on' : 'off') + ', ' + this._lampFourHours + ' lighting hours' + this._lineBreak : '') +
                     (this._lampReplacementModelNumber ? 'Lamp replacement model number: ' + this._lampReplacementModelNumber + this._lineBreak : '') +
-                    (this._filterUsageTime ? 'Filter usage time: ' + this._filterUsageTime + ' hours' + this._lineBreak : '') +
+                    (this._hasFilter ? 'Filter usage time: ' + this._filterUsageTime + ' hours' + this._lineBreak : '') +
                     (this._filterReplacementModelNumber ? 'Filter replacement model number: ' + this._filterReplacementModelNumber + this._lineBreak : '') +
                     (this._validInputs ? 'Inputs: ' + this._validInputs.join(', ') + this._lineBreak : '') +
                     (this._serialNumber ? 'SNR: ' + this._serialNumber + this._lineBreak : '') +
