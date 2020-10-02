@@ -2,7 +2,7 @@ var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
         extendStatics = Object.setPrototypeOf ||
             ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
         return extendStatics(d, b);
     };
     return function (d, b) {
@@ -28,8 +28,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlocksMonitor = void 0;
     var MS_PER_S = 1000;
-    var DEFAULT_STARTUP_TIMEOUT = 600;
-    var HEARTBEAT_INTERVAL = 30;
+    var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
+    var HEARTBEAT_INTERVAL = 60 * 5;
     var DEBUG = true;
     var CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
     var BlocksMonitor = (function (_super) {
@@ -54,19 +54,24 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             BlocksMonitor.installationIsStartingUp = true;
             wait(timeout * MS_PER_S).then(function () {
                 if (BlocksMonitor.installationIsStartingUp) {
-                    BlocksMonitor.installationIsUp = true;
-                    _this.checkHealth();
+                    _this.reportInstallationIsUp();
                 }
             });
+            this.sendHeartbeat();
         };
         BlocksMonitor.prototype.reportStartupFinished = function () {
+            this.reportInstallationIsUp();
+        };
+        BlocksMonitor.prototype.reportInstallationIsUp = function () {
             BlocksMonitor.installationIsUp = true;
             BlocksMonitor.installationIsStartingUp = false;
             this.checkHealth();
+            this.sendHeartbeat();
         };
         BlocksMonitor.prototype.reportShutdown = function () {
             BlocksMonitor.installationIsStartingUp = false;
             BlocksMonitor.installationIsUp = false;
+            this.sendHeartbeat();
         };
         BlocksMonitor.prototype.registerPJLinkPlusDevice = function (name) {
             var path = 'Network.' + name;

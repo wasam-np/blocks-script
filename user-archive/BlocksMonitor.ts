@@ -12,8 +12,8 @@ import { callable, parameter, property } from 'system_lib/Metadata';
 import { DisplaySpot, Spot } from '../system/Spot';
 
 const MS_PER_S = 1000;
-const DEFAULT_STARTUP_TIMEOUT = 600;
-const HEARTBEAT_INTERVAL = 30;
+const DEFAULT_STARTUP_TIMEOUT = 60 * 10;
+const HEARTBEAT_INTERVAL = 60 * 5;
 const DEBUG = true;
 const CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
 
@@ -52,23 +52,35 @@ export class BlocksMonitor extends Script {
 		timeout?: number
 	): void {
 		BlocksMonitor.installationIsStartingUp = true;
+
 		wait(timeout * MS_PER_S).then(() => {
 			if (BlocksMonitor.installationIsStartingUp) {
-				BlocksMonitor.installationIsUp = true;
-				this.checkHealth();
+				this.reportInstallationIsUp();
 			}
 		});
+
+		// inform server about startup begin
+		this.sendHeartbeat();
 	}
 	@callable('report installation startup finished - optional (otherwise startup timeout is being used)')
 	public reportStartupFinished(): void {
+		this.reportInstallationIsUp();
+	}
+
+	private reportInstallationIsUp () {
 		BlocksMonitor.installationIsUp = true;
 		BlocksMonitor.installationIsStartingUp = false;
 		this.checkHealth();
+		// inform server about startup done
+		this.sendHeartbeat();
 	}
+
 	@callable('report installation shutdown')
 	public reportShutdown(): void {
 		BlocksMonitor.installationIsStartingUp = false;
 		BlocksMonitor.installationIsUp = false;
+		// inform server about shutdown
+		this.sendHeartbeat();
 	}
 
 	@callable('register PJLinkPlus device')
