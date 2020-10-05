@@ -9,3 +9,4 @@ files/pjlinkplus.config/
 files/pjlinkplus.cache/
 
 files/*.config.json
+files/*.json
