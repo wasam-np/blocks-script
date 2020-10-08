@@ -125,12 +125,13 @@ export class BlocksMonitor extends Script {
 	/** HEARTBEAT **/
 	private sendHeartbeat() {
 		var url = BlocksMonitor.settings.blocksMonitorServerURL + '/heartbeat';
-		var heartbeat : HeartbeatMessage = new HeartbeatMessage();
-		heartbeat.installationIsStartingUp = BlocksMonitor.installationIsStartingUp;
-		heartbeat.installationIsUp = BlocksMonitor.installationIsUp;
+		var heartbeat : HeartbeatMessage = {
+			installationIsStartingUp: BlocksMonitor.installationIsStartingUp,
+			installationIsUp: BlocksMonitor.installationIsUp,
+		};
 		var json = JSON.stringify(heartbeat);
-		this.sendJSON(url, json).then((response: Response) => {
-			if (DEBUG) console.log(response.status + ': ' + response.data);
+		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
+			if (DEBUG && response.status != 200) console.log(response.status + ': ' + response.data);
 		});
 	}
 	private heartbeatLoop () {
@@ -141,7 +142,6 @@ export class BlocksMonitor extends Script {
 	}
 
 	/** HEALTH CHECK **/
-
 	private checkHealth(): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
 			wait(60 * MS_PER_S).then(() => {
@@ -150,47 +150,58 @@ export class BlocksMonitor extends Script {
 			for (let i = 0; i < BlocksMonitor.monitors.length; i++) {
 				const monitor = BlocksMonitor.monitors[i];
 				if (!monitor.isConnected) {
-					console.log(monitor.path + ' is not connected');
+					if (DEBUG) console.log(monitor.path + ' is not connected');
 				} else if (!monitor.isPoweredUp) {
-					console.log(monitor.path + ' is not powered up');
+					if (DEBUG) console.log(monitor.path + ' is not powered up');
 				} else {
 					// all is fine
 				}
+				BlocksMonitor.sendDeviceMonitorStatus(monitor);
 			}
 			resolve();
 		});
 	}
 
+	private static sendDeviceMonitorStatus(monitor: DeviceMonitor) {
+		var statusMessage: DeviceMonitorStatusMessage = monitor.statusMessage;
+		var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path;
+		var json = JSON.stringify(statusMessage);
+		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
+			if (DEBUG && response.status != 200) console.log(response.status + ': ' + response.data);
+		});
+	}
 
 	public static reportConnectionChange(monitor: DeviceMonitor, connected: boolean): void {
 		if (!connected && BlocksMonitor.installationIsUp) {
 			// connection loss during installation up: might be of interest
-			console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
+			if (DEBUG) console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
 		}
+		BlocksMonitor.sendDeviceMonitorStatus(monitor);
 	}
 	public static reportPowerChange(monitor: DeviceMonitor, power: boolean): void {
 		if (!power && BlocksMonitor.installationIsUp) {
 			// power off during installation up: might be of interest
-			console.log(monitor.path + ' lost power during installation run (' + power + ')');
+			if (DEBUG) console.log(monitor.path + ' lost power during installation run (' + power + ')');
 		}
+		BlocksMonitor.sendDeviceMonitorStatus(monitor);
 	}
 	public static reportWarning(monitor: DeviceMonitor): void {
-		console.log(monitor.path + ' reported warning');
+		if (DEBUG) console.log(monitor.path + ' reported warning');
 	}
 	public static reportError(monitor: DeviceMonitor): void {
-		console.log(monitor.path + ' reported error');
+		if (DEBUG) console.log(monitor.path + ' reported error');
 	}
 
 	/** SERVER TALK **/
 
-	private sendJSON(url: string, jsonContent: string): Promise<Response> {
+	private static sendJSON(url: string, jsonContent: string): Promise<Response> {
 		if (DEBUG) console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 13) + '")');
 		var request = SimpleHTTP.newRequest(url);
 		request.header('Authorization', 'Bearer ' + BlocksMonitor.settings.accessToken);
 		return request.post(jsonContent, 'application/json');
 	}
 
-	private shortenIfNeed(text: string, maxLength: number): string {
+	private static shortenIfNeed(text: string, maxLength: number): string {
 		const postText = '[...]';
 		return text.length <= maxLength ? text : text.substr(0, maxLength - postText.length) + postText;
 	}
@@ -203,9 +214,39 @@ class BlocksMonitorSettings {
 	public blocksMonitorServerURL: string = 'http://localhost:3113';
 	public accessToken: string = '';
 }
-class HeartbeatMessage {
-	public installationIsStartingUp: boolean;
-	public installationIsUp: boolean;
+interface HeartbeatMessage {
+	installationIsStartingUp: boolean;
+	installationIsUp: boolean;
+}
+interface DeviceMonitorStatusMessage {
+	isConnected: boolean;
+	isPoweredUp: boolean;
+	deviceType: string;
+	data?: object;
+}
+class SpotMonitorStatus implements DeviceMonitorStatusMessage {
+	public readonly isConnected: boolean;
+	public readonly isPoweredUp: boolean;
+	public readonly deviceType: string = 'Spot';
+	// public readonly data: object = null;
+	public constructor (isConnected: boolean, isPoweredUp: boolean) {
+		this.isConnected = isConnected;
+		this.isPoweredUp = isPoweredUp;
+	}
+}
+class PJLinkPlusMonitorStatus implements DeviceMonitorStatusMessage {
+	public readonly isConnected: boolean;
+	public readonly isPoweredUp: boolean;
+	public readonly deviceType: string = 'PJLinkPlus';
+	public readonly data: PJLinkPlusData;
+	public constructor (isConnected: boolean, isPoweredUp: boolean, data?: PJLinkPlusData) {
+		this.isConnected = isConnected;
+		this.isPoweredUp = isPoweredUp;
+		this.data = data;
+	}
+}
+interface PJLinkPlusData {
+
 }
 
 class DeviceMonitor {
@@ -233,6 +274,13 @@ class DeviceMonitor {
 		if (!this.powerAccessor) return false;
 		return this.powerAccessor.available ? this.powerAccessor.value : false;
 	}
+	public get statusMessage(): DeviceMonitorStatusMessage {
+		return {
+			isConnected: this.isConnected,
+			isPoweredUp: this.isPoweredUp,
+			deviceType: 'unknown',
+		};
+	}
 }
 class PJLinkPlusMonitor extends DeviceMonitor {
 	readonly hasProblemAccessor: PropertyAccessor<boolean>;
@@ -241,17 +289,30 @@ class PJLinkPlusMonitor extends DeviceMonitor {
 		super(path);
 
 		this.hasProblemAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.hasProblem', (hasProblem) => {
-			if (device.hasError) {
-				BlocksMonitor.reportError(this);
-			} else if (device.hasWarning) {
-				BlocksMonitor.reportWarning(this);
+			if (hasProblem) {
+				if (device.hasError) {
+					BlocksMonitor.reportError(this);
+				} else if (device.hasWarning) {
+					BlocksMonitor.reportWarning(this);
+				}
 			}
-			// console.log(this.path + ' has problem: ' + hasProblem);
 		});
+	}
+	public get statusMessage(): PJLinkPlusMonitorStatus {
+		return new PJLinkPlusMonitorStatus(
+			this.isConnected,
+			this.isPoweredUp,
+		);
 	}
 }
 class SpotMonitor extends DeviceMonitor {
 	public constructor(path: string, device: DisplaySpot) {
 		super(path);
+	}
+	public get statusMessage(): SpotMonitorStatus {
+		return new SpotMonitorStatus(
+			this.isConnected,
+			this.isPoweredUp,
+		);
 	}
 }

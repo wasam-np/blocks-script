@@ -106,12 +106,13 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         };
         BlocksMonitor.prototype.sendHeartbeat = function () {
             var url = BlocksMonitor.settings.blocksMonitorServerURL + '/heartbeat';
-            var heartbeat = new HeartbeatMessage();
-            heartbeat.installationIsStartingUp = BlocksMonitor.installationIsStartingUp;
-            heartbeat.installationIsUp = BlocksMonitor.installationIsUp;
+            var heartbeat = {
+                installationIsStartingUp: BlocksMonitor.installationIsStartingUp,
+                installationIsUp: BlocksMonitor.installationIsUp,
+            };
             var json = JSON.stringify(heartbeat);
-            this.sendJSON(url, json).then(function (response) {
-                if (DEBUG)
+            BlocksMonitor.sendJSON(url, json).then(function (response) {
+                if (DEBUG && response.status != 200)
                     console.log(response.status + ': ' + response.data);
             });
         };
@@ -130,41 +131,59 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 for (var i = 0; i < BlocksMonitor.monitors.length; i++) {
                     var monitor = BlocksMonitor.monitors[i];
                     if (!monitor.isConnected) {
-                        console.log(monitor.path + ' is not connected');
+                        if (DEBUG)
+                            console.log(monitor.path + ' is not connected');
                     }
                     else if (!monitor.isPoweredUp) {
-                        console.log(monitor.path + ' is not powered up');
+                        if (DEBUG)
+                            console.log(monitor.path + ' is not powered up');
                     }
                     else {
                     }
+                    BlocksMonitor.sendDeviceMonitorStatus(monitor);
                 }
                 resolve();
             });
         };
+        BlocksMonitor.sendDeviceMonitorStatus = function (monitor) {
+            var statusMessage = monitor.statusMessage;
+            var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path;
+            var json = JSON.stringify(statusMessage);
+            BlocksMonitor.sendJSON(url, json).then(function (response) {
+                if (DEBUG && response.status != 200)
+                    console.log(response.status + ': ' + response.data);
+            });
+        };
         BlocksMonitor.reportConnectionChange = function (monitor, connected) {
             if (!connected && BlocksMonitor.installationIsUp) {
-                console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
+                if (DEBUG)
+                    console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
             }
+            BlocksMonitor.sendDeviceMonitorStatus(monitor);
         };
         BlocksMonitor.reportPowerChange = function (monitor, power) {
             if (!power && BlocksMonitor.installationIsUp) {
-                console.log(monitor.path + ' lost power during installation run (' + power + ')');
+                if (DEBUG)
+                    console.log(monitor.path + ' lost power during installation run (' + power + ')');
             }
+            BlocksMonitor.sendDeviceMonitorStatus(monitor);
         };
         BlocksMonitor.reportWarning = function (monitor) {
-            console.log(monitor.path + ' reported warning');
+            if (DEBUG)
+                console.log(monitor.path + ' reported warning');
         };
         BlocksMonitor.reportError = function (monitor) {
-            console.log(monitor.path + ' reported error');
+            if (DEBUG)
+                console.log(monitor.path + ' reported error');
         };
-        BlocksMonitor.prototype.sendJSON = function (url, jsonContent) {
+        BlocksMonitor.sendJSON = function (url, jsonContent) {
             if (DEBUG)
                 console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 13) + '")');
             var request = SimpleHTTP_1.SimpleHTTP.newRequest(url);
             request.header('Authorization', 'Bearer ' + BlocksMonitor.settings.accessToken);
             return request.post(jsonContent, 'application/json');
         };
-        BlocksMonitor.prototype.shortenIfNeed = function (text, maxLength) {
+        BlocksMonitor.shortenIfNeed = function (text, maxLength) {
             var postText = '[...]';
             return text.length <= maxLength ? text : text.substr(0, maxLength - postText.length) + postText;
         };
@@ -215,10 +234,22 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         }
         return BlocksMonitorSettings;
     }());
-    var HeartbeatMessage = (function () {
-        function HeartbeatMessage() {
+    var SpotMonitorStatus = (function () {
+        function SpotMonitorStatus(isConnected, isPoweredUp) {
+            this.deviceType = 'Spot';
+            this.isConnected = isConnected;
+            this.isPoweredUp = isPoweredUp;
         }
-        return HeartbeatMessage;
+        return SpotMonitorStatus;
+    }());
+    var PJLinkPlusMonitorStatus = (function () {
+        function PJLinkPlusMonitorStatus(isConnected, isPoweredUp, data) {
+            this.deviceType = 'PJLinkPlus';
+            this.isConnected = isConnected;
+            this.isPoweredUp = isPoweredUp;
+            this.data = data;
+        }
+        return PJLinkPlusMonitorStatus;
     }());
     var DeviceMonitor = (function () {
         function DeviceMonitor(path) {
@@ -251,6 +282,17 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             enumerable: false,
             configurable: true
         });
+        Object.defineProperty(DeviceMonitor.prototype, "statusMessage", {
+            get: function () {
+                return {
+                    isConnected: this.isConnected,
+                    isPoweredUp: this.isPoweredUp,
+                    deviceType: 'unknown',
+                };
+            },
+            enumerable: false,
+            configurable: true
+        });
         return DeviceMonitor;
     }());
     var PJLinkPlusMonitor = (function (_super) {
@@ -258,15 +300,24 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         function PJLinkPlusMonitor(path, device) {
             var _this = _super.call(this, path) || this;
             _this.hasProblemAccessor = BlocksMonitor.instance.getProperty(_this.path + '.hasProblem', function (hasProblem) {
-                if (device.hasError) {
-                    BlocksMonitor.reportError(_this);
-                }
-                else if (device.hasWarning) {
-                    BlocksMonitor.reportWarning(_this);
+                if (hasProblem) {
+                    if (device.hasError) {
+                        BlocksMonitor.reportError(_this);
+                    }
+                    else if (device.hasWarning) {
+                        BlocksMonitor.reportWarning(_this);
+                    }
                 }
             });
             return _this;
         }
+        Object.defineProperty(PJLinkPlusMonitor.prototype, "statusMessage", {
+            get: function () {
+                return new PJLinkPlusMonitorStatus(this.isConnected, this.isPoweredUp);
+            },
+            enumerable: false,
+            configurable: true
+        });
         return PJLinkPlusMonitor;
     }(DeviceMonitor));
     var SpotMonitor = (function (_super) {
@@ -274,6 +325,13 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         function SpotMonitor(path, device) {
             return _super.call(this, path) || this;
         }
+        Object.defineProperty(SpotMonitor.prototype, "statusMessage", {
+            get: function () {
+                return new SpotMonitorStatus(this.isConnected, this.isPoweredUp);
+            },
+            enumerable: false,
+            configurable: true
+        });
         return SpotMonitor;
     }(DeviceMonitor));
 });
