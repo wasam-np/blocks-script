@@ -11,6 +11,8 @@ import { Script, ScriptEnv, PropertyAccessor } from 'system_lib/Script';
 import { callable, parameter, property } from 'system_lib/Metadata';
 import { DisplaySpot, Spot } from '../system/Spot';
 
+const split: any = require("lib/split-string");
+
 const MS_PER_S = 1000;
 const DEFAULT_STARTUP_TIMEOUT = 60 * 10;
 const HEARTBEAT_INTERVAL = 60 * 5;
@@ -88,6 +90,12 @@ export class BlocksMonitor extends Script {
 		@parameter('device name')
 		name: string
 	): void {
+		var names = this.getStringArray(name);
+		for (let i = 0; i < names.length; i++) {
+			this.registerPJLinkPlusDeviceSingle(names[i]);
+		}
+	}
+	private registerPJLinkPlusDeviceSingle(name: string): void {
 		var path = 'Network.' + name;
 		var device = Network[name] as unknown as PJLinkPlus;
 		if (device) {
@@ -103,6 +111,12 @@ export class BlocksMonitor extends Script {
 		@parameter('spot name')
 		name: string
 	): void {
+		var names = this.getStringArray(name);
+		for (let i = 0; i < names.length; i++) {
+			this.registerSpotSingle(names[i]);
+		}
+	}
+	private registerSpotSingle(name: string): void {
 		var path = 'Spot.' + name;
 		var spot = Spot[name] as DisplaySpot;
 		if (spot) {
@@ -205,6 +219,33 @@ export class BlocksMonitor extends Script {
 		const postText = '[...]';
 		return text.length <= maxLength ? text : text.substr(0, maxLength - postText.length) + postText;
 	}
+
+	/* tools */
+	private getStringArray(list: string): string[] {
+        var result: string[] = [];
+        var listParts: string[] = split(list,
+            { separator: ',', quotes: ['"', '\''], brackets: { '[': ']' } }
+        );
+        for (let i = 0; i < listParts.length; i++) {
+            var listPart: string = this.removeQuotes(listParts[i].trim());
+            result.push(listPart);
+        }
+        return result;
+    }
+	private removeQuotes(value: string): string {
+        if (value.length < 2) return value;
+        const QUOTATION = '"';
+        const APOSTROPHE = '\'';
+        var first: string = value.charAt(0);
+        var last: string = value.charAt(value.length - 1);
+        if (
+            (first == QUOTATION && last == QUOTATION) ||
+            (first == APOSTROPHE && last == APOSTROPHE)
+        ) {
+            return value.substr(1, value.length - 2);
+        }
+        return value;
+    }
 
 }
 interface Dictionary<Group> {

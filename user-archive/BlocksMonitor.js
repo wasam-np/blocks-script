@@ -27,6 +27,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlocksMonitor = void 0;
+    var split = require("lib/split-string");
     var MS_PER_S = 1000;
     var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
     var HEARTBEAT_INTERVAL = 60 * 5;
@@ -74,6 +75,12 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             this.sendHeartbeat();
         };
         BlocksMonitor.prototype.registerPJLinkPlusDevice = function (name) {
+            var names = this.getStringArray(name);
+            for (var i = 0; i < names.length; i++) {
+                this.registerPJLinkPlusDeviceSingle(names[i]);
+            }
+        };
+        BlocksMonitor.prototype.registerPJLinkPlusDeviceSingle = function (name) {
             var path = 'Network.' + name;
             var device = Network_1.Network[name];
             if (device) {
@@ -86,6 +93,12 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             }
         };
         BlocksMonitor.prototype.registerSpot = function (name) {
+            var names = this.getStringArray(name);
+            for (var i = 0; i < names.length; i++) {
+                this.registerSpotSingle(names[i]);
+            }
+        };
+        BlocksMonitor.prototype.registerSpotSingle = function (name) {
             var path = 'Spot.' + name;
             var spot = Spot_1.Spot[name];
             if (spot) {
@@ -186,6 +199,28 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         BlocksMonitor.shortenIfNeed = function (text, maxLength) {
             var postText = '[...]';
             return text.length <= maxLength ? text : text.substr(0, maxLength - postText.length) + postText;
+        };
+        BlocksMonitor.prototype.getStringArray = function (list) {
+            var result = [];
+            var listParts = split(list, { separator: ',', quotes: ['"', '\''], brackets: { '[': ']' } });
+            for (var i = 0; i < listParts.length; i++) {
+                var listPart = this.removeQuotes(listParts[i].trim());
+                result.push(listPart);
+            }
+            return result;
+        };
+        BlocksMonitor.prototype.removeQuotes = function (value) {
+            if (value.length < 2)
+                return value;
+            var QUOTATION = '"';
+            var APOSTROPHE = '\'';
+            var first = value.charAt(0);
+            var last = value.charAt(value.length - 1);
+            if ((first == QUOTATION && last == QUOTATION) ||
+                (first == APOSTROPHE && last == APOSTROPHE)) {
+                return value.substr(1, value.length - 2);
+            }
+            return value;
         };
         BlocksMonitor.monitorsByDevicePath = {};
         BlocksMonitor.monitors = [];
