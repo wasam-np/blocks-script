@@ -1,8 +1,9 @@
 /*
 	Blocks Monitor
 
-
  */
+const VERSION: string = '0.4.0';
+
 import { PJLinkPlus } from 'driver/PJLinkPlus';
 import { Network, NetworkTCP } from 'system/Network';
 import { SimpleHTTP, Response } from 'system/SimpleHTTP';
@@ -10,6 +11,7 @@ import { SimpleFile } from 'system/SimpleFile';
 import { Script, ScriptEnv, PropertyAccessor } from 'system_lib/Script';
 import { callable, parameter, property } from 'system_lib/Metadata';
 import { DisplaySpot, Spot } from '../system/Spot';
+import { NetworkProjector } from '../driver/NetworkProjector';
 
 const split: any = require("lib/split-string");
 
@@ -85,31 +87,9 @@ export class BlocksMonitor extends Script {
 		this.sendHeartbeat();
 	}
 
-	@callable('register PJLinkPlus device')
-	public registerPJLinkPlusDevice(
-		@parameter('device name')
-		name: string
-	): void {
-		var names = this.getStringArray(name);
-		for (let i = 0; i < names.length; i++) {
-			this.registerPJLinkPlusDeviceSingle(names[i]);
-		}
-	}
-	private registerPJLinkPlusDeviceSingle(name: string): void {
-		var path = 'Network.' + name;
-		var device = Network[name] as unknown as PJLinkPlus;
-		if (device) {
-			if (BlocksMonitor.isDeviceNotMonitored(path)) {
-				BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device));
-			}
-		} else {
-			console.log('no device found:' + name);
-		}
-	}
 	@callable('register Spot')
 	public registerSpot(
-		@parameter('spot name')
-		name: string
+		@parameter('spot name') name: string
 	): void {
 		var names = this.getStringArray(name);
 		for (let i = 0; i < names.length; i++) {
@@ -123,11 +103,45 @@ export class BlocksMonitor extends Script {
 			if (BlocksMonitor.isDeviceNotMonitored(path)) {
 				BlocksMonitor.addMonitor(new SpotMonitor(path, spot));
 			}
-		} else {
-			console.log('no Spot found:' + name);
+		} else { console.log('no Spot found:' + name); }
+	}
+
+	@callable('register Network device')
+	public registerNetworkDevice(
+		@parameter('device name') name: string
+	): void {
+		var names = this.getStringArray(name);
+		for (let i = 0; i < names.length; i++) {
+			this.registerNetworkDeviceSingle(names[i]);
+		}
+	}
+	private registerNetworkDeviceSingle(name: string): void {
+		const device = Network[name];
+		if (!device) {
+			console.log('no device found:' + name);
+			return;
+		}
+		const path = 'Network.' + name;
+		if (BlocksMonitor.isDeviceMonitored(path)) return;
+		console.log(device.address + ' ' + device.fullName + ' ' + device.name);
+		console.log('trying to determine type of ' + path);
+		if (device.isOfTypeName('PJLinkPlus')) {
+			BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device as NetworkTCP));
+		} else if (device.isOfTypeName('NetworkProjector')) {
+			BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device as NetworkTCP));
+		} else if (device.isOfTypeName('NetworkTCP') ||
+			device.isOfTypeName('SamsungMDC') ||
+			device.isOfTypeName('ChristiePerformance')) {
+			BlocksMonitor.addMonitor(new NetworkTCPDeviceMonitor(path, device as NetworkTCP));
+		}
+		else if (device.isOfTypeName('NetworkUDP')) {
+			BlocksMonitor.addMonitor(new NetworkUDPDeviceMonitor(path));
 		}
 	}
 
+	private static isDeviceMonitored (devicePath: string): boolean {
+		return devicePath in BlocksMonitor.monitorsByDevicePath;
+	}
 	private static isDeviceNotMonitored (devicePath: string): boolean {
 		return !BlocksMonitor.monitorsByDevicePath[devicePath];
 	}
@@ -142,6 +156,7 @@ export class BlocksMonitor extends Script {
 		var heartbeat : HeartbeatMessage = {
 			installationIsStartingUp: BlocksMonitor.installationIsStartingUp,
 			installationIsUp: BlocksMonitor.installationIsUp,
+			monitorVersion: VERSION,
 		};
 		var json = JSON.stringify(heartbeat);
 		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
@@ -177,7 +192,7 @@ export class BlocksMonitor extends Script {
 	}
 
 	private static sendDeviceMonitorStatus(monitor: DeviceMonitor) {
-		var statusMessage: DeviceMonitorStatusMessage = monitor.statusMessage;
+		var statusMessage: DeviceMonitorStatus = monitor.statusMessage;
 		var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path;
 		var json = JSON.stringify(statusMessage);
 		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
@@ -209,7 +224,7 @@ export class BlocksMonitor extends Script {
 	/** SERVER TALK **/
 
 	private static sendJSON(url: string, jsonContent: string): Promise<Response> {
-		if (DEBUG) console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 13) + '")');
+		if (DEBUG) console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 160) + '")');
 		var request = SimpleHTTP.newRequest(url);
 		request.header('Authorization', 'Bearer ' + BlocksMonitor.settings.accessToken);
 		return request.post(jsonContent, 'application/json');
@@ -258,53 +273,62 @@ class BlocksMonitorSettings {
 interface HeartbeatMessage {
 	installationIsStartingUp: boolean;
 	installationIsUp: boolean;
+	monitorVersion: string;
 }
-interface DeviceMonitorStatusMessage {
+interface IDeviceMonitorStatus {
 	isConnected: boolean;
 	isPoweredUp: boolean;
 	deviceType: string;
 	data?: object;
 }
-class SpotMonitorStatus implements DeviceMonitorStatusMessage {
+class DeviceMonitorStatus implements IDeviceMonitorStatus {
 	public readonly isConnected: boolean;
 	public readonly isPoweredUp: boolean;
-	public readonly deviceType: string = 'Spot';
-	// public readonly data: object = null;
-	public constructor (isConnected: boolean, isPoweredUp: boolean) {
-		this.isConnected = isConnected;
-		this.isPoweredUp = isPoweredUp;
-	}
-}
-class PJLinkPlusMonitorStatus implements DeviceMonitorStatusMessage {
-	public readonly isConnected: boolean;
-	public readonly isPoweredUp: boolean;
-	public readonly deviceType: string = 'PJLinkPlus';
-	public readonly data: PJLinkPlusData;
-	public constructor (isConnected: boolean, isPoweredUp: boolean, data?: PJLinkPlusData) {
+	public readonly deviceType: string = 'unknown';
+	public readonly data: IDevideData;
+	public constructor (isConnected: boolean, isPoweredUp: boolean, data?: IDevideData) {
 		this.isConnected = isConnected;
 		this.isPoweredUp = isPoweredUp;
 		this.data = data;
 	}
 }
-interface PJLinkPlusData {
+class SpotMonitorStatus extends DeviceMonitorStatus {
+	public readonly deviceType: string = 'Spot';
+}
+class NetworkTCPStatus extends DeviceMonitorStatus {
+	public readonly deviceType: string = 'NetworkTCP';
+}
+class NetworkProjectorStatus extends DeviceMonitorStatus {
+	public readonly deviceType: string = 'NetworkProjector';
+}
+class PJLinkPlusMonitorStatus extends DeviceMonitorStatus {
+	public readonly deviceType: string = 'PJLinkPlus';
+	public constructor (isConnected: boolean, isPoweredUp: boolean, data: IPJLinkPlusData) {
+		super(isConnected, isPoweredUp, data);
+	}
+}
+
+// DATA interfaces
+interface IDevideData {}
+interface INetworkTCPDeviceData extends IDevideData {
+	enabled: boolean;
+	address: string;
+	port: number;
+}
+interface INetworkProjectorData extends INetworkTCPDeviceData {}
+interface IPJLinkPlusData extends INetworkProjectorData {
 
 }
 
 class DeviceMonitor {
 	public readonly path: string;
 	readonly connectedAccessor: PropertyAccessor<boolean>;
-	readonly powerAccessor: PropertyAccessor<boolean>;
+	protected powerAccessor: PropertyAccessor<boolean>;
 	public constructor(path: string) {
 		this.path = path;
 		var connectedPropName = 'connected';
-		var powerPropName = 'power';
 		this.connectedAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + connectedPropName, (connected) => {
 			BlocksMonitor.reportConnectionChange(this, connected);
-			// console.log(this.path + ' connected: ' + connected);
-		});
-		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
-			BlocksMonitor.reportPowerChange(this, power);
-			// console.log(this.path + ' power: ' + power);
 		});
 	}
 	public get isConnected(): boolean {
@@ -315,25 +339,71 @@ class DeviceMonitor {
 		if (!this.powerAccessor) return false;
 		return this.powerAccessor.available ? this.powerAccessor.value : false;
 	}
-	public get statusMessage(): DeviceMonitorStatusMessage {
-		return {
-			isConnected: this.isConnected,
-			isPoweredUp: this.isPoweredUp,
-			deviceType: 'unknown',
-		};
+	public get statusMessage(): DeviceMonitorStatus {
+		return new DeviceMonitorStatus(
+			this.isConnected,
+			this.isPoweredUp,
+			this.statusData
+		);
+	}
+	protected get statusData(): IDevideData {
+		return {};
 	}
 }
-class PJLinkPlusMonitor extends DeviceMonitor {
-	readonly hasProblemAccessor: PropertyAccessor<boolean>;
-
-	public constructor(path: string, device: PJLinkPlus) {
+class NetworkDeviceMonitor extends DeviceMonitor {}
+class NetworkTCPDeviceMonitor extends NetworkDeviceMonitor {
+	readonly networkTCPDevice: NetworkTCP;
+	public constructor(path: string, device: NetworkTCP) {
 		super(path);
+		this.networkTCPDevice = device;
 
+		console.log(this.networkTCPDevice.fullName + ' ' + this.networkTCPDevice.name);
+	}
+	public get statusMessage(): DeviceMonitorStatus {
+		return new NetworkTCPStatus(
+			this.isConnected,
+			this.isPoweredUp,
+			this.statusData
+		);
+	}
+	protected get statusData(): INetworkTCPDeviceData {
+		return {
+			enabled: this.deviceEnabled,
+			address: this.deviceAddress,
+			port: this.devicePort,
+		}
+	}
+	protected get deviceEnabled(): boolean { return this.networkTCPDevice.enabled; }
+	protected get deviceAddress(): string { return this.networkTCPDevice.address; }
+	protected get devicePort(): number { return this.networkTCPDevice.port; }
+}
+class NetworkProjectorMonitor extends NetworkTCPDeviceMonitor {
+	public constructor(path: string, device: NetworkTCP) {
+		super(path, device);
+		var powerPropName = 'power';
+		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
+			BlocksMonitor.reportPowerChange(this, power);
+		});
+	}
+	public get statusMessage(): DeviceMonitorStatus {
+		return new NetworkProjectorStatus(
+			this.isConnected,
+			this.isPoweredUp,
+			this.statusData
+		);
+	}
+}
+class NetworkUDPDeviceMonitor extends NetworkDeviceMonitor {}
+class PJLinkPlusMonitor extends NetworkProjectorMonitor {
+	readonly hasProblemAccessor: PropertyAccessor<boolean>;
+	public constructor(path: string, device: NetworkTCP) {
+		super(path, device);
+		const pjLinkPlusDevice: PJLinkPlus = device as unknown as PJLinkPlus;
 		this.hasProblemAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.hasProblem', (hasProblem) => {
 			if (hasProblem) {
-				if (device.hasError) {
+				if (pjLinkPlusDevice.hasError) {
 					BlocksMonitor.reportError(this);
-				} else if (device.hasWarning) {
+				} else if (pjLinkPlusDevice.hasWarning) {
 					BlocksMonitor.reportWarning(this);
 				}
 			}
@@ -343,12 +413,17 @@ class PJLinkPlusMonitor extends DeviceMonitor {
 		return new PJLinkPlusMonitorStatus(
 			this.isConnected,
 			this.isPoweredUp,
+			this.statusData,
 		);
 	}
 }
 class SpotMonitor extends DeviceMonitor {
 	public constructor(path: string, device: DisplaySpot) {
 		super(path);
+		var powerPropName = 'power';
+		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
+			BlocksMonitor.reportPowerChange(this, power);
+		});
 	}
 	public get statusMessage(): SpotMonitorStatus {
 		return new SpotMonitorStatus(
