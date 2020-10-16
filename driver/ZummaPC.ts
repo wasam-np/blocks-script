@@ -43,6 +43,13 @@ export class ZummaPC extends Driver<NetworkTCP> {
 		});
 	}
 
+	/**
+	 * Allow clients to check for my type, just as in some system object classes
+	 */
+	isOfTypeName(typeName: string) {
+		return typeName === 'ZummaPC' ? this : null;
+	}
+
 
     @Meta.property("Connected to Zumma", true)
 	public set connected(online: boolean) {

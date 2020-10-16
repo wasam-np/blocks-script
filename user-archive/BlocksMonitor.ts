@@ -127,6 +127,8 @@ export class BlocksMonitor extends Script {
 		console.log('trying to determine type of ' + path);
 		if (device.isOfTypeName('PJLinkPlus')) {
 			BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device as NetworkTCP));
+		} else if (device.isOfTypeName('ZummaPC')) {
+			BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device as NetworkTCP));
 		} else if (device.isOfTypeName('NetworkProjector')) {
 			BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device as NetworkTCP));
 		} else if (device.isOfTypeName('NetworkTCP') ||
@@ -192,7 +194,7 @@ export class BlocksMonitor extends Script {
 	}
 
 	private static sendDeviceMonitorStatus(monitor: DeviceMonitor) {
-		var statusMessage: DeviceMonitorStatus = monitor.statusMessage;
+		var statusMessage: IDeviceMonitorStatus = monitor.statusMessage;
 		var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path;
 		var json = JSON.stringify(statusMessage);
 		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
@@ -281,32 +283,6 @@ interface IDeviceMonitorStatus {
 	deviceType: string;
 	data?: object;
 }
-class DeviceMonitorStatus implements IDeviceMonitorStatus {
-	public readonly isConnected: boolean;
-	public readonly isPoweredUp: boolean;
-	public readonly deviceType: string = 'unknown';
-	public readonly data: IDevideData;
-	public constructor (isConnected: boolean, isPoweredUp: boolean, data?: IDevideData) {
-		this.isConnected = isConnected;
-		this.isPoweredUp = isPoweredUp;
-		this.data = data;
-	}
-}
-class SpotMonitorStatus extends DeviceMonitorStatus {
-	public readonly deviceType: string = 'Spot';
-}
-class NetworkTCPStatus extends DeviceMonitorStatus {
-	public readonly deviceType: string = 'NetworkTCP';
-}
-class NetworkProjectorStatus extends DeviceMonitorStatus {
-	public readonly deviceType: string = 'NetworkProjector';
-}
-class PJLinkPlusMonitorStatus extends DeviceMonitorStatus {
-	public readonly deviceType: string = 'PJLinkPlus';
-	public constructor (isConnected: boolean, isPoweredUp: boolean, data: IPJLinkPlusData) {
-		super(isConnected, isPoweredUp, data);
-	}
-}
 
 // DATA interfaces
 interface IDevideData {}
@@ -339,15 +315,15 @@ class DeviceMonitor {
 		if (!this.powerAccessor) return false;
 		return this.powerAccessor.available ? this.powerAccessor.value : false;
 	}
-	public get statusMessage(): DeviceMonitorStatus {
-		return new DeviceMonitorStatus(
-			this.isConnected,
-			this.isPoweredUp,
-			this.statusData
-		);
-	}
-	protected get statusData(): IDevideData {
-		return {};
+	public get deviceType(): string { return 'unknown'; }
+	protected get statusData(): IDevideData { return {}; }
+	public get statusMessage(): IDeviceMonitorStatus {
+		return {
+			isConnected: this.isConnected,
+			isPoweredUp: this.isPoweredUp,
+			deviceType: this.deviceType,
+			data: this.statusData,
+		}
 	}
 }
 class NetworkDeviceMonitor extends DeviceMonitor {}
@@ -359,13 +335,7 @@ class NetworkTCPDeviceMonitor extends NetworkDeviceMonitor {
 
 		console.log(this.networkTCPDevice.fullName + ' ' + this.networkTCPDevice.name);
 	}
-	public get statusMessage(): DeviceMonitorStatus {
-		return new NetworkTCPStatus(
-			this.isConnected,
-			this.isPoweredUp,
-			this.statusData
-		);
-	}
+	public get deviceType(): string { return 'NetworkTCP'; }
 	protected get statusData(): INetworkTCPDeviceData {
 		return {
 			enabled: this.deviceEnabled,
@@ -385,13 +355,7 @@ class NetworkProjectorMonitor extends NetworkTCPDeviceMonitor {
 			BlocksMonitor.reportPowerChange(this, power);
 		});
 	}
-	public get statusMessage(): DeviceMonitorStatus {
-		return new NetworkProjectorStatus(
-			this.isConnected,
-			this.isPoweredUp,
-			this.statusData
-		);
-	}
+	public get deviceType(): string { return 'NetworkProjector'; }
 }
 class NetworkUDPDeviceMonitor extends NetworkDeviceMonitor {}
 class PJLinkPlusMonitor extends NetworkProjectorMonitor {
@@ -409,13 +373,17 @@ class PJLinkPlusMonitor extends NetworkProjectorMonitor {
 			}
 		});
 	}
-	public get statusMessage(): PJLinkPlusMonitorStatus {
-		return new PJLinkPlusMonitorStatus(
-			this.isConnected,
-			this.isPoweredUp,
-			this.statusData,
-		);
+	public get deviceType(): string { return 'PJLinkPlus'; }
+}
+class ZummaPCMonitor extends NetworkTCPDeviceMonitor {
+	public constructor(path: string, device: NetworkTCP) {
+		super(path, device);
+		var powerPropName = 'power';
+		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
+			BlocksMonitor.reportPowerChange(this, power);
+		});
 	}
+	public get deviceType(): string { return 'ZummaPC'; }
 }
 class SpotMonitor extends DeviceMonitor {
 	public constructor(path: string, device: DisplaySpot) {
@@ -425,10 +393,5 @@ class SpotMonitor extends DeviceMonitor {
 			BlocksMonitor.reportPowerChange(this, power);
 		});
 	}
-	public get statusMessage(): SpotMonitorStatus {
-		return new SpotMonitorStatus(
-			this.isConnected,
-			this.isPoweredUp,
-		);
-	}
+	public get deviceType(): string { return 'Spot'; }
 }

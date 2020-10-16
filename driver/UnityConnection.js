@@ -60,6 +60,9 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             });
             return _this;
         }
+        UnityConnection.prototype.isOfTypeName = function (typeName) {
+            return typeName === "UnityConnection" ? this : null;
+        };
         UnityConnection.prototype.updateVariable = function (bv) {
             var name = this.renderVariableName(bv.Name);
             var type = this.typesByName[name];

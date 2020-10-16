@@ -57,6 +57,13 @@ export class UnityConnection extends Driver<NetworkUDP> {
 		});
 	}
 
+	/**
+	 * Allow clients to check for my type, just as in some system object classes
+	 */
+	isOfTypeName(typeName: string) {
+		return typeName === "UnityConnection" ? this : null;
+	}
+
     private updateVariable (bv: BlocksVariable) {
         var name = this.renderVariableName(bv.Name);
         var type = this.typesByName[name];

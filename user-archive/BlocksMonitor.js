@@ -113,6 +113,9 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             if (device.isOfTypeName('PJLinkPlus')) {
                 BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device));
             }
+            else if (device.isOfTypeName('ZummaPC')) {
+                BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device));
+            }
             else if (device.isOfTypeName('NetworkProjector')) {
                 BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device));
             }
@@ -288,51 +291,6 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         }
         return BlocksMonitorSettings;
     }());
-    var DeviceMonitorStatus = (function () {
-        function DeviceMonitorStatus(isConnected, isPoweredUp, data) {
-            this.deviceType = 'unknown';
-            this.isConnected = isConnected;
-            this.isPoweredUp = isPoweredUp;
-            this.data = data;
-        }
-        return DeviceMonitorStatus;
-    }());
-    var SpotMonitorStatus = (function (_super) {
-        __extends(SpotMonitorStatus, _super);
-        function SpotMonitorStatus() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.deviceType = 'Spot';
-            return _this;
-        }
-        return SpotMonitorStatus;
-    }(DeviceMonitorStatus));
-    var NetworkTCPStatus = (function (_super) {
-        __extends(NetworkTCPStatus, _super);
-        function NetworkTCPStatus() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.deviceType = 'NetworkTCP';
-            return _this;
-        }
-        return NetworkTCPStatus;
-    }(DeviceMonitorStatus));
-    var NetworkProjectorStatus = (function (_super) {
-        __extends(NetworkProjectorStatus, _super);
-        function NetworkProjectorStatus() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.deviceType = 'NetworkProjector';
-            return _this;
-        }
-        return NetworkProjectorStatus;
-    }(DeviceMonitorStatus));
-    var PJLinkPlusMonitorStatus = (function (_super) {
-        __extends(PJLinkPlusMonitorStatus, _super);
-        function PJLinkPlusMonitorStatus(isConnected, isPoweredUp, data) {
-            var _this = _super.call(this, isConnected, isPoweredUp, data) || this;
-            _this.deviceType = 'PJLinkPlus';
-            return _this;
-        }
-        return PJLinkPlusMonitorStatus;
-    }(DeviceMonitorStatus));
     var DeviceMonitor = (function () {
         function DeviceMonitor(path) {
             var _this = this;
@@ -360,16 +318,24 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             enumerable: false,
             configurable: true
         });
-        Object.defineProperty(DeviceMonitor.prototype, "statusMessage", {
-            get: function () {
-                return new DeviceMonitorStatus(this.isConnected, this.isPoweredUp, this.statusData);
-            },
+        Object.defineProperty(DeviceMonitor.prototype, "deviceType", {
+            get: function () { return 'unknown'; },
             enumerable: false,
             configurable: true
         });
         Object.defineProperty(DeviceMonitor.prototype, "statusData", {
+            get: function () { return {}; },
+            enumerable: false,
+            configurable: true
+        });
+        Object.defineProperty(DeviceMonitor.prototype, "statusMessage", {
             get: function () {
-                return {};
+                return {
+                    isConnected: this.isConnected,
+                    isPoweredUp: this.isPoweredUp,
+                    deviceType: this.deviceType,
+                    data: this.statusData,
+                };
             },
             enumerable: false,
             configurable: true
@@ -391,10 +357,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             console.log(_this.networkTCPDevice.fullName + ' ' + _this.networkTCPDevice.name);
             return _this;
         }
-        Object.defineProperty(NetworkTCPDeviceMonitor.prototype, "statusMessage", {
-            get: function () {
-                return new NetworkTCPStatus(this.isConnected, this.isPoweredUp, this.statusData);
-            },
+        Object.defineProperty(NetworkTCPDeviceMonitor.prototype, "deviceType", {
+            get: function () { return 'NetworkTCP'; },
             enumerable: false,
             configurable: true
         });
@@ -436,10 +400,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             });
             return _this;
         }
-        Object.defineProperty(NetworkProjectorMonitor.prototype, "statusMessage", {
-            get: function () {
-                return new NetworkProjectorStatus(this.isConnected, this.isPoweredUp, this.statusData);
-            },
+        Object.defineProperty(NetworkProjectorMonitor.prototype, "deviceType", {
+            get: function () { return 'NetworkProjector'; },
             enumerable: false,
             configurable: true
         });
@@ -469,15 +431,30 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             });
             return _this;
         }
-        Object.defineProperty(PJLinkPlusMonitor.prototype, "statusMessage", {
-            get: function () {
-                return new PJLinkPlusMonitorStatus(this.isConnected, this.isPoweredUp, this.statusData);
-            },
+        Object.defineProperty(PJLinkPlusMonitor.prototype, "deviceType", {
+            get: function () { return 'PJLinkPlus'; },
             enumerable: false,
             configurable: true
         });
         return PJLinkPlusMonitor;
     }(NetworkProjectorMonitor));
+    var ZummaPCMonitor = (function (_super) {
+        __extends(ZummaPCMonitor, _super);
+        function ZummaPCMonitor(path, device) {
+            var _this = _super.call(this, path, device) || this;
+            var powerPropName = 'power';
+            _this.powerAccessor = BlocksMonitor.instance.getProperty(_this.path + '.' + powerPropName, function (power) {
+                BlocksMonitor.reportPowerChange(_this, power);
+            });
+            return _this;
+        }
+        Object.defineProperty(ZummaPCMonitor.prototype, "deviceType", {
+            get: function () { return 'ZummaPC'; },
+            enumerable: false,
+            configurable: true
+        });
+        return ZummaPCMonitor;
+    }(NetworkTCPDeviceMonitor));
     var SpotMonitor = (function (_super) {
         __extends(SpotMonitor, _super);
         function SpotMonitor(path, device) {
@@ -488,10 +465,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             });
             return _this;
         }
-        Object.defineProperty(SpotMonitor.prototype, "statusMessage", {
-            get: function () {
-                return new SpotMonitorStatus(this.isConnected, this.isPoweredUp);
-            },
+        Object.defineProperty(SpotMonitor.prototype, "deviceType", {
+            get: function () { return 'Spot'; },
             enumerable: false,
             configurable: true
         });
