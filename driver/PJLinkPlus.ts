@@ -256,9 +256,8 @@ export class PJLinkPlus extends NetworkProjector {
             this.poll();
             this.attemptConnect();
         });
-
-
     }
+
 	/**
 	 * Allow clients to check for my type, just as in some system object classes
 	 */
