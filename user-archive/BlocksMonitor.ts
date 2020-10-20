@@ -5,13 +5,15 @@
 const VERSION: string = '0.4.0';
 
 import { PJLinkPlus } from 'driver/PJLinkPlus';
-import { Network, NetworkTCP } from 'system/Network';
+import { Network, NetworkTCP, NetworkUDP } from 'system/Network';
 import { SimpleHTTP, Response } from 'system/SimpleHTTP';
 import { SimpleFile } from 'system/SimpleFile';
 import { Script, ScriptEnv, PropertyAccessor } from 'system_lib/Script';
-import { callable, parameter, property } from 'system_lib/Metadata';
+import { callable, parameter } from 'system_lib/Metadata';
 import { DisplaySpot, Spot } from '../system/Spot';
 import { NetworkProjector } from '../driver/NetworkProjector';
+import { NetworkDriver } from '../system_lib/NetworkDriver';
+import { ZummaPC } from '../driver/ZummaPC';
 
 const split: any = require("lib/split-string");
 
@@ -123,20 +125,19 @@ export class BlocksMonitor extends Script {
 		}
 		const path = 'Network.' + name;
 		if (BlocksMonitor.isDeviceMonitored(path)) return;
-		console.log(device.address + ' ' + device.fullName + ' ' + device.name);
-		console.log('trying to determine type of ' + path);
-		if (device.isOfTypeName('PJLinkPlus')) {
-			BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device as NetworkTCP));
-		} else if (device.isOfTypeName('ZummaPC')) {
-			BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device as NetworkTCP));
-		} else if (device.isOfTypeName('NetworkProjector')) {
-			BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device as NetworkTCP));
-		} else if (device.isOfTypeName('NetworkTCP') ||
+
+		if (device.isOfTypeName(DeviceTypes.PJLinkPlus)) {
+			BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device as unknown as PJLinkPlus));
+		} else if (device.isOfTypeName(DeviceTypes.ZummaPC)) {
+			BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device as unknown as ZummaPC));
+		} else if (device.isOfTypeName(DeviceTypes.NetworkProjector)) {
+			BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device as unknown as NetworkProjector));
+		} else if (device.isOfTypeName(DeviceTypes.NetworkTCP) ||
 			device.isOfTypeName('SamsungMDC') ||
 			device.isOfTypeName('ChristiePerformance')) {
 			BlocksMonitor.addMonitor(new NetworkTCPDeviceMonitor(path, device as NetworkTCP));
 		}
-		else if (device.isOfTypeName('NetworkUDP')) {
+		else if (device.isOfTypeName(DeviceTypes.NetworkUDP)) {
 			BlocksMonitor.addMonitor(new NetworkUDPDeviceMonitor(path));
 		}
 	}
@@ -216,6 +217,9 @@ export class BlocksMonitor extends Script {
 		}
 		BlocksMonitor.sendDeviceMonitorStatus(monitor);
 	}
+	public static reportStatusChange(monitor: DeviceMonitor): void {
+		BlocksMonitor.sendDeviceMonitorStatus(monitor);
+	}
 	public static reportWarning(monitor: DeviceMonitor): void {
 		if (DEBUG) console.log(monitor.path + ' reported warning');
 	}
@@ -265,6 +269,16 @@ export class BlocksMonitor extends Script {
     }
 
 }
+enum DeviceTypes {
+	Unknown = 'unknown',
+	NetworkTCP = 'NetworkTCP',
+	NetworkUDP = 'NetworkUDP',
+	NetworkDriver = 'NetworkDriver',
+	NetworkProjector = 'NetworkProjector',
+	PJLinkPlus = 'PJLinkPlus',
+	Spot = 'Spot',
+	ZummaPC = 'ZummaPC',
+}
 interface Dictionary<Group> {
 	[label: string]: Group;
 }
@@ -281,19 +295,33 @@ interface IDeviceMonitorStatus {
 	isConnected: boolean;
 	isPoweredUp: boolean;
 	deviceType: string;
-	data?: object;
+	data: IDeviceDataContainer[];
 }
 
 // DATA interfaces
+interface IDeviceDataContainer {
+	deviceType: string;
+	deviceData: IDevideData;
+}
 interface IDevideData {}
-interface INetworkTCPDeviceData extends IDevideData {
+interface INetworkDriverData extends IDevideData {
 	enabled: boolean;
 	address: string;
 	port: number;
 }
-interface INetworkProjectorData extends INetworkTCPDeviceData {}
-interface IPJLinkPlusData extends INetworkProjectorData {
-
+// interface INetworkTCPDeviceData extends IDevideData {}
+// interface INetworkProjectorData extends IDevideData {}
+interface IPJLinkPlusData extends IDevideData {
+	deviceName: string;
+	manufactureName: string;
+	productName: string;
+	otherInformation: string;
+	serialNumber: string;
+	softwareVersion: string;
+}
+interface ISpotData extends IDevideData {
+	address: string;
+	volume: number;
 }
 
 class DeviceMonitor {
@@ -315,53 +343,62 @@ class DeviceMonitor {
 		if (!this.powerAccessor) return false;
 		return this.powerAccessor.available ? this.powerAccessor.value : false;
 	}
-	public get deviceType(): string { return 'unknown'; }
-	protected get statusData(): IDevideData { return {}; }
+	public get deviceType(): string { return DeviceTypes.Unknown; }
 	public get statusMessage(): IDeviceMonitorStatus {
+		var data: IDeviceDataContainer[] = [];
+		this.appendDeviceData(data);
 		return {
 			isConnected: this.isConnected,
 			isPoweredUp: this.isPoweredUp,
 			deviceType: this.deviceType,
-			data: this.statusData,
+			data: data,
 		}
 	}
+	protected appendDeviceData(_data: IDeviceDataContainer[]) {}
 }
-class NetworkDeviceMonitor extends DeviceMonitor {}
-class NetworkTCPDeviceMonitor extends NetworkDeviceMonitor {
-	readonly networkTCPDevice: NetworkTCP;
-	public constructor(path: string, device: NetworkTCP) {
+class NetworkDeviceMonitor<facadeType> extends DeviceMonitor {}
+class NetworkTCPDeviceMonitor extends NetworkDeviceMonitor<NetworkTCP> {
+	public constructor(path: string, _device: NetworkTCP) {
 		super(path);
-		this.networkTCPDevice = device;
-
-		console.log(this.networkTCPDevice.fullName + ' ' + this.networkTCPDevice.name);
 	}
-	public get deviceType(): string { return 'NetworkTCP'; }
-	protected get statusData(): INetworkTCPDeviceData {
-		return {
+	public get deviceType(): string { return DeviceTypes.NetworkTCP; }
+}
+class NetworkDriverMonitor extends NetworkDeviceMonitor<NetworkTCP | NetworkUDP> {
+	readonly networkDriver: NetworkDriver;
+	public constructor(path: string, device: NetworkDriver) {
+		super(path);
+		this.networkDriver = device;
+	}
+	public get deviceType(): string { return DeviceTypes.NetworkDriver; }
+	protected get deviceEnabled(): boolean { return this.networkDriver.enabled; }
+	protected get deviceAddress(): string { return this.networkDriver.address; }
+	protected get devicePort(): number { return this.networkDriver.port; }
+	protected appendDeviceData(data: IDeviceDataContainer[]) {
+		super.appendDeviceData(data);
+		var deviceData: INetworkDriverData = {
 			enabled: this.deviceEnabled,
 			address: this.deviceAddress,
 			port: this.devicePort,
 		}
+		data.push({ deviceType: DeviceTypes.NetworkDriver, deviceData: deviceData });
 	}
-	protected get deviceEnabled(): boolean { return this.networkTCPDevice.enabled; }
-	protected get deviceAddress(): string { return this.networkTCPDevice.address; }
-	protected get devicePort(): number { return this.networkTCPDevice.port; }
 }
-class NetworkProjectorMonitor extends NetworkTCPDeviceMonitor {
-	public constructor(path: string, device: NetworkTCP) {
+class NetworkProjectorMonitor extends NetworkDriverMonitor {
+	public constructor(path: string, device: NetworkProjector) {
 		super(path, device);
 		var powerPropName = 'power';
 		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
 			BlocksMonitor.reportPowerChange(this, power);
 		});
 	}
-	public get deviceType(): string { return 'NetworkProjector'; }
+	public get deviceType(): string { return DeviceTypes.NetworkProjector; }
 }
-class NetworkUDPDeviceMonitor extends NetworkDeviceMonitor {}
 class PJLinkPlusMonitor extends NetworkProjectorMonitor {
+	readonly pjLinkPlus: PJLinkPlus;
 	readonly hasProblemAccessor: PropertyAccessor<boolean>;
-	public constructor(path: string, device: NetworkTCP) {
+	public constructor(path: string, device: PJLinkPlus) {
 		super(path, device);
+		this.pjLinkPlus = device;
 		const pjLinkPlusDevice: PJLinkPlus = device as unknown as PJLinkPlus;
 		this.hasProblemAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.hasProblem', (hasProblem) => {
 			if (hasProblem) {
@@ -373,25 +410,48 @@ class PJLinkPlusMonitor extends NetworkProjectorMonitor {
 			}
 		});
 	}
-	public get deviceType(): string { return 'PJLinkPlus'; }
+	public get deviceType(): string { return DeviceTypes.PJLinkPlus; }
+	protected appendDeviceData(data: IDeviceDataContainer[]) {
+		super.appendDeviceData(data);
+		var deviceData: IPJLinkPlusData = {
+			deviceName: this.pjLinkPlus.deviceName,
+			manufactureName: this.pjLinkPlus.manufactureName,
+			productName: this.pjLinkPlus.productName,
+			otherInformation: this.pjLinkPlus.otherInformation,
+			serialNumber: this.pjLinkPlus.serialNumber,
+			softwareVersion: this.pjLinkPlus.softwareVersion,
+		}
+		data.push({ deviceType: DeviceTypes.PJLinkPlus, deviceData: deviceData });
+	}
 }
-class ZummaPCMonitor extends NetworkTCPDeviceMonitor {
-	public constructor(path: string, device: NetworkTCP) {
+class ZummaPCMonitor extends NetworkDriverMonitor {
+	public constructor(path: string, device: ZummaPC) {
 		super(path, device);
 		var powerPropName = 'power';
 		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
 			BlocksMonitor.reportPowerChange(this, power);
 		});
 	}
-	public get deviceType(): string { return 'ZummaPC'; }
+	public get deviceType(): string { return DeviceTypes.ZummaPC; }
 }
+class NetworkUDPDeviceMonitor extends NetworkDeviceMonitor<NetworkUDP> {}
 class SpotMonitor extends DeviceMonitor {
+	readonly displaySpot: DisplaySpot;
 	public constructor(path: string, device: DisplaySpot) {
 		super(path);
+		this.displaySpot = device;
 		var powerPropName = 'power';
 		this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.' + powerPropName, (power) => {
 			BlocksMonitor.reportPowerChange(this, power);
 		});
 	}
-	public get deviceType(): string { return 'Spot'; }
+	public get deviceType(): string { return DeviceTypes.Spot; }
+	protected appendDeviceData(data: IDeviceDataContainer[]) {
+		super.appendDeviceData(data);
+		var deviceData: ISpotData = {
+			address: this.displaySpot.address,
+			volume: this.displaySpot.volume,
+		}
+		data.push({ deviceType: DeviceTypes.Spot, deviceData: deviceData });
+	}
 }

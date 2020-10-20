@@ -5,6 +5,7 @@
 import {NetworkTCP} from "system/Network";
 import {Driver} from "system_lib/Driver";
 import * as Meta from "system_lib/Metadata";
+import { NetworkDriver } from "../system_lib/NetworkDriver";
 
 /**
  A driver using a UDP socket for communicating with a "device" running Zumma.
@@ -15,7 +16,7 @@ import * as Meta from "system_lib/Metadata";
  its constructor will accept that type.
  */
 @Meta.driver('NetworkTCP', { port: 32401 })
-export class ZummaPC extends Driver<NetworkTCP> {
+export class ZummaPC extends NetworkDriver {
     private powerState: boolean;
 
 	private poweringUp: Promise<void>;	// Set while waiting to be powered up

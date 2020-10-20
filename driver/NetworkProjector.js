@@ -2,7 +2,7 @@ var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
         extendStatics = Object.setPrototypeOf ||
             ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
         return extendStatics(d, b);
     };
     return function (d, b) {
@@ -23,7 +23,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-define(["require", "exports", "system_lib/Metadata", "system_lib/Driver"], function (require, exports, Metadata_1, Driver_1) {
+define(["require", "exports", "system_lib/Metadata", "system_lib/NetworkDriver"], function (require, exports, Metadata_1, NetworkDriver_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.NumState = exports.BoolState = exports.State = exports.NetworkProjector = void 0;
@@ -266,7 +266,7 @@ define(["require", "exports", "system_lib/Metadata", "system_lib/Driver"], funct
             __metadata("design:paramtypes", [Boolean])
         ], NetworkProjector.prototype, "connected", null);
         return NetworkProjector;
-    }(Driver_1.Driver));
+    }(NetworkDriver_1.NetworkDriver));
     exports.NetworkProjector = NetworkProjector;
     var State = (function () {
         function State(baseCmd, propName, correctionApprover) {

@@ -6,13 +6,14 @@
 import {NetworkTCP} from "system/Network";
 import {callable, parameter, property} from "system_lib/Metadata";
 import {Driver} from "system_lib/Driver";
+import {NetworkDriver} from "system_lib/NetworkDriver";
 
 const REQUEST_TIMEOUT = 8000;
 
 /**
  Common functionality needed by projectors controlled over the network.
  */
-export abstract class NetworkProjector extends Driver<NetworkTCP> {
+export abstract class NetworkProjector extends NetworkDriver {
 	private awake: boolean;					// Initialization queries are done
 	protected discarded: boolean;				// Set once I've been discarded
 	protected poller: CancelablePromise<void>;	// To poll projector status regularly

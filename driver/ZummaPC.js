@@ -23,7 +23,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], function (require, exports, Driver_1, Meta) {
+define(["require", "exports", "system_lib/Metadata", "../system_lib/NetworkDriver"], function (require, exports, Meta, NetworkDriver_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ZummaPC = void 0;
@@ -206,6 +206,6 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             __metadata("design:paramtypes", [Object])
         ], ZummaPC);
         return ZummaPC;
-    }(Driver_1.Driver));
+    }(NetworkDriver_1.NetworkDriver));
     exports.ZummaPC = ZummaPC;
 });
