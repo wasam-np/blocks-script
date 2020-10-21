@@ -23,11 +23,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/SimpleFile", "system_lib/Script", "system_lib/Metadata", "../system/Spot"], function (require, exports, Network_1, SimpleHTTP_1, SimpleFile_1, Script_1, Metadata_1, Spot_1) {
+define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/SimpleFile", "system_lib/Script", "system_lib/Metadata", "../system/Spot", "../system/WATCHOUT"], function (require, exports, Network_1, SimpleHTTP_1, SimpleFile_1, Script_1, Metadata_1, Spot_1, WATCHOUT_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlocksMonitor = void 0;
-    var VERSION = '0.4.0';
+    var VERSION = '0.5.0';
     var split = require("lib/split-string");
     var MS_PER_S = 1000;
     var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
@@ -75,6 +75,42 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             BlocksMonitor.installationIsUp = false;
             this.sendHeartbeat();
         };
+        BlocksMonitor.prototype.registerNetworkDevice = function (name) {
+            var names = this.getStringArray(name);
+            for (var i = 0; i < names.length; i++) {
+                this.registerNetworkDeviceSingle(names[i]);
+            }
+        };
+        BlocksMonitor.prototype.registerNetworkDeviceSingle = function (name) {
+            var device = Network_1.Network[name];
+            if (!device) {
+                console.log('no device found:' + name);
+                return;
+            }
+            var path = 'Network.' + name;
+            if (BlocksMonitor.isDeviceMonitored(path))
+                return;
+            if (device.isOfTypeName(DeviceType.GrandMA)) {
+                BlocksMonitor.addMonitor(new GrandMAMonitor(path, device));
+            }
+            else if (device.isOfTypeName(DeviceType.PJLinkPlus)) {
+                BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device));
+            }
+            else if (device.isOfTypeName(DeviceType.ZummaPC)) {
+                BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device));
+            }
+            else if (device.isOfTypeName(DeviceType.NetworkProjector)) {
+                BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device));
+            }
+            else if (device.isOfTypeName(DeviceType.NetworkTCP) ||
+                device.isOfTypeName('ChristiePerformance') ||
+                device.isOfTypeName('SamsungMDC')) {
+                BlocksMonitor.addMonitor(new NetworkTCPDeviceMonitor(path, device));
+            }
+            else if (device.isOfTypeName(DeviceType.NetworkUDP)) {
+                BlocksMonitor.addMonitor(new NetworkUDPDeviceMonitor(path));
+            }
+        };
         BlocksMonitor.prototype.registerSpot = function (name) {
             var names = this.getStringArray(name);
             for (var i = 0; i < names.length; i++) {
@@ -93,37 +129,22 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 console.log('no Spot found:' + name);
             }
         };
-        BlocksMonitor.prototype.registerNetworkDevice = function (name) {
+        BlocksMonitor.prototype.registerWatchout = function (name) {
             var names = this.getStringArray(name);
             for (var i = 0; i < names.length; i++) {
-                this.registerNetworkDeviceSingle(names[i]);
+                this.registerWatchoutSingle(names[i]);
             }
         };
-        BlocksMonitor.prototype.registerNetworkDeviceSingle = function (name) {
-            var device = Network_1.Network[name];
-            if (!device) {
-                console.log('no device found:' + name);
-                return;
+        BlocksMonitor.prototype.registerWatchoutSingle = function (name) {
+            var path = 'WATCHOUT.' + name;
+            var cluster = WATCHOUT_1.WATCHOUT[name];
+            if (cluster) {
+                if (BlocksMonitor.isDeviceNotMonitored(path)) {
+                    BlocksMonitor.addMonitor(new WATCHOUTClusterMonitor(path, cluster));
+                }
             }
-            var path = 'Network.' + name;
-            if (BlocksMonitor.isDeviceMonitored(path))
-                return;
-            if (device.isOfTypeName(DeviceTypes.PJLinkPlus)) {
-                BlocksMonitor.addMonitor(new PJLinkPlusMonitor(path, device));
-            }
-            else if (device.isOfTypeName(DeviceTypes.ZummaPC)) {
-                BlocksMonitor.addMonitor(new ZummaPCMonitor(path, device));
-            }
-            else if (device.isOfTypeName(DeviceTypes.NetworkProjector)) {
-                BlocksMonitor.addMonitor(new NetworkProjectorMonitor(path, device));
-            }
-            else if (device.isOfTypeName(DeviceTypes.NetworkTCP) ||
-                device.isOfTypeName('SamsungMDC') ||
-                device.isOfTypeName('ChristiePerformance')) {
-                BlocksMonitor.addMonitor(new NetworkTCPDeviceMonitor(path, device));
-            }
-            else if (device.isOfTypeName(DeviceTypes.NetworkUDP)) {
-                BlocksMonitor.addMonitor(new NetworkUDPDeviceMonitor(path));
+            else {
+                console.log('no Spot found:' + name);
             }
         };
         BlocksMonitor.isDeviceMonitored = function (devicePath) {
@@ -142,6 +163,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 installationIsStartingUp: BlocksMonitor.installationIsStartingUp,
                 installationIsUp: BlocksMonitor.installationIsUp,
                 monitorVersion: VERSION,
+                timestamp: new Date(),
             };
             var json = JSON.stringify(heartbeat);
             BlocksMonitor.sendJSON(url, json).then(function (response) {
@@ -187,6 +209,14 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                     console.log(response.status + ': ' + response.data);
             });
         };
+        BlocksMonitor.sendDeviceMonitorChallenge = function (monitor, challenge) {
+            var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path + '/challenge';
+            var json = JSON.stringify(challenge);
+            BlocksMonitor.sendJSON(url, json).then(function (response) {
+                if (DEBUG && response.status != 200)
+                    console.log(response.status + ': ' + response.data);
+            });
+        };
         BlocksMonitor.reportConnectionChange = function (monitor, connected) {
             if (!connected && BlocksMonitor.installationIsUp) {
                 if (DEBUG)
@@ -204,13 +234,19 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         BlocksMonitor.reportStatusChange = function (monitor) {
             BlocksMonitor.sendDeviceMonitorStatus(monitor);
         };
-        BlocksMonitor.reportWarning = function (monitor) {
-            if (DEBUG)
-                console.log(monitor.path + ' reported warning');
+        BlocksMonitor.reportWarning = function (monitor, text) {
+            this.sendDeviceMonitorChallenge(monitor, {
+                state: ChallengeState.Warning,
+                text: text,
+                timestamp: new Date()
+            });
         };
-        BlocksMonitor.reportError = function (monitor) {
-            if (DEBUG)
-                console.log(monitor.path + ' reported error');
+        BlocksMonitor.reportError = function (monitor, text) {
+            this.sendDeviceMonitorChallenge(monitor, {
+                state: ChallengeState.Error,
+                text: text,
+                timestamp: new Date()
+            });
         };
         BlocksMonitor.sendJSON = function (url, jsonContent) {
             if (DEBUG)
@@ -269,33 +305,42 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             __metadata("design:returntype", void 0)
         ], BlocksMonitor.prototype, "reportShutdown", null);
         __decorate([
-            Metadata_1.callable('register Spot'),
+            Metadata_1.callable('register Network devices. comma separated fx "a, b, c"'),
+            __param(0, Metadata_1.parameter('device name')),
+            __metadata("design:type", Function),
+            __metadata("design:paramtypes", [String]),
+            __metadata("design:returntype", void 0)
+        ], BlocksMonitor.prototype, "registerNetworkDevice", null);
+        __decorate([
+            Metadata_1.callable('register DisplaySpots. comma separated fx "a, b.b, c"'),
             __param(0, Metadata_1.parameter('spot name')),
             __metadata("design:type", Function),
             __metadata("design:paramtypes", [String]),
             __metadata("design:returntype", void 0)
         ], BlocksMonitor.prototype, "registerSpot", null);
         __decorate([
-            Metadata_1.callable('register Network device'),
-            __param(0, Metadata_1.parameter('device name')),
+            Metadata_1.callable('register WATCHOUT clusters. comma separated fx "a, b, e"'),
+            __param(0, Metadata_1.parameter('cluster name')),
             __metadata("design:type", Function),
             __metadata("design:paramtypes", [String]),
             __metadata("design:returntype", void 0)
-        ], BlocksMonitor.prototype, "registerNetworkDevice", null);
+        ], BlocksMonitor.prototype, "registerWatchout", null);
         return BlocksMonitor;
     }(Script_1.Script));
     exports.BlocksMonitor = BlocksMonitor;
-    var DeviceTypes;
-    (function (DeviceTypes) {
-        DeviceTypes["Unknown"] = "unknown";
-        DeviceTypes["NetworkTCP"] = "NetworkTCP";
-        DeviceTypes["NetworkUDP"] = "NetworkUDP";
-        DeviceTypes["NetworkDriver"] = "NetworkDriver";
-        DeviceTypes["NetworkProjector"] = "NetworkProjector";
-        DeviceTypes["PJLinkPlus"] = "PJLinkPlus";
-        DeviceTypes["Spot"] = "Spot";
-        DeviceTypes["ZummaPC"] = "ZummaPC";
-    })(DeviceTypes || (DeviceTypes = {}));
+    var DeviceType;
+    (function (DeviceType) {
+        DeviceType["Unknown"] = "unknown";
+        DeviceType["NetworkTCP"] = "NetworkTCP";
+        DeviceType["NetworkUDP"] = "NetworkUDP";
+        DeviceType["NetworkDriver"] = "NetworkDriver";
+        DeviceType["NetworkProjector"] = "NetworkProjector";
+        DeviceType["GrandMA"] = "GrandMA";
+        DeviceType["PJLinkPlus"] = "PJLinkPlus";
+        DeviceType["Spot"] = "Spot";
+        DeviceType["ZummaPC"] = "ZummaPC";
+        DeviceType["WATCHOUTCluster"] = "WATCHOUTCluster";
+    })(DeviceType || (DeviceType = {}));
     var BlocksMonitorSettings = (function () {
         function BlocksMonitorSettings() {
             this.blocksMonitorServerURL = 'http://localhost:3113';
@@ -303,6 +348,13 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         }
         return BlocksMonitorSettings;
     }());
+    var ChallengeState;
+    (function (ChallengeState) {
+        ChallengeState["NoChallenge"] = "no-challenge";
+        ChallengeState["Warning"] = "warning";
+        ChallengeState["Error"] = "error";
+        ChallengeState["Unknown"] = "unknown";
+    })(ChallengeState || (ChallengeState = {}));
     var DeviceMonitor = (function () {
         function DeviceMonitor(path) {
             var _this = this;
@@ -330,8 +382,13 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             enumerable: false,
             configurable: true
         });
+        Object.defineProperty(DeviceMonitor.prototype, "challengeStatus", {
+            get: function () { return ChallengeState.NoChallenge; },
+            enumerable: false,
+            configurable: true
+        });
         Object.defineProperty(DeviceMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.Unknown; },
+            get: function () { return DeviceType.Unknown; },
             enumerable: false,
             configurable: true
         });
@@ -342,8 +399,10 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 return {
                     isConnected: this.isConnected,
                     isPoweredUp: this.isPoweredUp,
+                    challengeStatus: this.challengeStatus,
                     deviceType: this.deviceType,
                     data: data,
+                    timestamp: new Date(),
                 };
             },
             enumerable: false,
@@ -365,7 +424,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             return _super.call(this, path) || this;
         }
         Object.defineProperty(NetworkTCPDeviceMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.NetworkTCP; },
+            get: function () { return DeviceType.NetworkTCP; },
             enumerable: false,
             configurable: true
         });
@@ -379,7 +438,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             return _this;
         }
         Object.defineProperty(NetworkDriverMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.NetworkDriver; },
+            get: function () { return DeviceType.NetworkDriver; },
             enumerable: false,
             configurable: true
         });
@@ -405,7 +464,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 address: this.deviceAddress,
                 port: this.devicePort,
             };
-            data.push({ deviceType: DeviceTypes.NetworkDriver, deviceData: deviceData });
+            data.push({ deviceType: DeviceType.NetworkDriver, deviceData: deviceData });
         };
         return NetworkDriverMonitor;
     }(NetworkDeviceMonitor));
@@ -420,32 +479,47 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             return _this;
         }
         Object.defineProperty(NetworkProjectorMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.NetworkProjector; },
+            get: function () { return DeviceType.NetworkProjector; },
             enumerable: false,
             configurable: true
         });
         return NetworkProjectorMonitor;
+    }(NetworkDriverMonitor));
+    var GrandMAMonitor = (function (_super) {
+        __extends(GrandMAMonitor, _super);
+        function GrandMAMonitor() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        Object.defineProperty(GrandMAMonitor.prototype, "deviceType", {
+            get: function () { return DeviceType.GrandMA; },
+            enumerable: false,
+            configurable: true
+        });
+        return GrandMAMonitor;
     }(NetworkDriverMonitor));
     var PJLinkPlusMonitor = (function (_super) {
         __extends(PJLinkPlusMonitor, _super);
         function PJLinkPlusMonitor(path, device) {
             var _this = _super.call(this, path, device) || this;
             _this.pjLinkPlus = device;
-            var pjLinkPlusDevice = device;
             _this.hasProblemAccessor = BlocksMonitor.instance.getProperty(_this.path + '.hasProblem', function (hasProblem) {
-                if (hasProblem) {
-                    if (pjLinkPlusDevice.hasError) {
-                        BlocksMonitor.reportError(_this);
-                    }
-                    else if (pjLinkPlusDevice.hasWarning) {
-                        BlocksMonitor.reportWarning(_this);
-                    }
-                }
+                _this.handleProblem(hasProblem);
             });
             return _this;
         }
+        Object.defineProperty(PJLinkPlusMonitor.prototype, "challengeStatus", {
+            get: function () {
+                if (this.pjLinkPlus.hasError)
+                    return ChallengeState.Error;
+                if (this.pjLinkPlus.hasWarning)
+                    return ChallengeState.Warning;
+                return ChallengeState.NoChallenge;
+            },
+            enumerable: false,
+            configurable: true
+        });
         Object.defineProperty(PJLinkPlusMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.PJLinkPlus; },
+            get: function () { return DeviceType.PJLinkPlus; },
             enumerable: false,
             configurable: true
         });
@@ -459,7 +533,12 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 serialNumber: this.pjLinkPlus.serialNumber,
                 softwareVersion: this.pjLinkPlus.softwareVersion,
             };
-            data.push({ deviceType: DeviceTypes.PJLinkPlus, deviceData: deviceData });
+            data.push({ deviceType: DeviceType.PJLinkPlus, deviceData: deviceData });
+        };
+        PJLinkPlusMonitor.prototype.handleProblem = function (hasProblem) {
+            if (hasProblem) {
+            }
+            BlocksMonitor.reportStatusChange(this);
         };
         return PJLinkPlusMonitor;
     }(NetworkProjectorMonitor));
@@ -474,7 +553,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             return _this;
         }
         Object.defineProperty(ZummaPCMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.ZummaPC; },
+            get: function () { return DeviceType.ZummaPC; },
             enumerable: false,
             configurable: true
         });
@@ -499,7 +578,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             return _this;
         }
         Object.defineProperty(SpotMonitor.prototype, "deviceType", {
-            get: function () { return DeviceTypes.Spot; },
+            get: function () { return DeviceType.Spot; },
             enumerable: false,
             configurable: true
         });
@@ -509,8 +588,22 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 address: this.displaySpot.address,
                 volume: this.displaySpot.volume,
             };
-            data.push({ deviceType: DeviceTypes.Spot, deviceData: deviceData });
+            data.push({ deviceType: DeviceType.Spot, deviceData: deviceData });
         };
         return SpotMonitor;
+    }(DeviceMonitor));
+    var WATCHOUTClusterMonitor = (function (_super) {
+        __extends(WATCHOUTClusterMonitor, _super);
+        function WATCHOUTClusterMonitor(path, cluster) {
+            var _this = _super.call(this, path) || this;
+            _this.cluster = cluster;
+            return _this;
+        }
+        Object.defineProperty(WATCHOUTClusterMonitor.prototype, "deviceType", {
+            get: function () { return DeviceType.WATCHOUTCluster; },
+            enumerable: false,
+            configurable: true
+        });
+        return WATCHOUTClusterMonitor;
     }(DeviceMonitor));
 });

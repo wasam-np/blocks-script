@@ -10,9 +10,10 @@
 import {NetworkTCP} from "system/Network";
 import {Driver} from "system_lib/Driver";
 import {driver, max, min, property, callable, parameter} from "system_lib/Metadata";
+import { NetworkDriver } from "../system_lib/NetworkDriver";
 
 @driver('NetworkTCP', { port: 30000 })
-export class GrandMA extends Driver<NetworkTCP> {
+export class GrandMA extends NetworkDriver {
 
 	private username : string = 'blocks';
 	private password : string = '';
