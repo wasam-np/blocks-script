@@ -22,7 +22,7 @@ const split: any = require("lib/split-string");
 const MS_PER_S = 1000;
 const DEFAULT_STARTUP_TIMEOUT = 60 * 10;
 const HEARTBEAT_INTERVAL = 60 * 5;
-const DEBUG = true;
+const DEBUG = false;
 const CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
 
 export class BlocksMonitor extends Script {

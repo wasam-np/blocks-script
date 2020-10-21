@@ -32,7 +32,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
     var MS_PER_S = 1000;
     var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
     var HEARTBEAT_INTERVAL = 60 * 5;
-    var DEBUG = true;
+    var DEBUG = false;
     var CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
     var BlocksMonitor = (function (_super) {
         __extends(BlocksMonitor, _super);
