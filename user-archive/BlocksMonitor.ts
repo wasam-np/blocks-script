@@ -2,7 +2,7 @@
 	Blocks Monitor
 
  */
-const VERSION: string = '0.5.0';
+const VERSION: string = '0.5.2';
 
 import { PJLinkPlus } from 'driver/PJLinkPlus';
 import { Network, NetworkTCP, NetworkUDP } from 'system/Network';
@@ -166,8 +166,6 @@ export class BlocksMonitor extends Script {
 		} else { console.log('no Spot found:' + name); }
 	}
 
-
-
 	private static isDeviceMonitored (devicePath: string): boolean {
 		return devicePath in BlocksMonitor.monitorsByDevicePath;
 	}
@@ -201,6 +199,7 @@ export class BlocksMonitor extends Script {
 	}
 
 	/** HEALTH CHECK **/
+	// for now just sends all device statuses to the backend
 	private checkHealth(): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
 			wait(60 * MS_PER_S).then(() => {
@@ -208,13 +207,6 @@ export class BlocksMonitor extends Script {
 			});
 			for (let i = 0; i < BlocksMonitor.monitors.length; i++) {
 				const monitor = BlocksMonitor.monitors[i];
-				if (!monitor.isConnected) {
-					if (DEBUG) console.log(monitor.path + ' is not connected');
-				} else if (!monitor.isPoweredUp) {
-					if (DEBUG) console.log(monitor.path + ' is not powered up');
-				} else {
-					// all is fine
-				}
 				BlocksMonitor.sendDeviceMonitorStatus(monitor);
 			}
 			resolve();
@@ -368,8 +360,6 @@ interface INetworkDriverData extends IDevideData {
 	address: string;
 	port: number;
 }
-// interface INetworkTCPDeviceData extends IDevideData {}
-// interface INetworkProjectorData extends IDevideData {}
 interface IPJLinkPlusData extends IDevideData {
 	deviceName: string;
 	manufactureName: string;
@@ -381,6 +371,9 @@ interface IPJLinkPlusData extends IDevideData {
 interface ISpotData extends IDevideData {
 	address: string;
 	volume: number;
+}
+interface IWATCHOUTClusterData extends IDevideData {
+	showName: string;
 }
 
 class DeviceMonitor {
@@ -533,6 +526,26 @@ class WATCHOUTClusterMonitor extends DeviceMonitor {
 	public constructor(path: string, cluster: WATCHOUTCluster) {
 		super(path);
 		this.cluster = cluster;
+		cluster.subscribe('error', (_sender, message) => {
+			if (message.type == 'Error') BlocksMonitor.reportError(this, message.text);
+			else BlocksMonitor.reportWarning(this, message.text);
+		});
+		cluster.subscribe('watchout', (_sender: WATCHOUTCluster, message)=>{
+			var stateChanged = false;
+			switch(message.type) {
+				case 'ShowName':
+					stateChanged = true;
+					break;
+			}
+			if (stateChanged) BlocksMonitor.reportStatusChange(this);
+		});
 	}
 	public get deviceType(): string { return DeviceType.WATCHOUTCluster; }
+	protected appendDeviceData(data: IDeviceDataContainer[]) {
+		super.appendDeviceData(data);
+		var deviceData: IWATCHOUTClusterData = {
+			showName: this.cluster.getShowName()
+		}
+		data.push({ deviceType: DeviceType.WATCHOUTCluster, deviceData: deviceData });
+	}
 }
