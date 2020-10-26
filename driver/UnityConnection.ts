@@ -18,6 +18,7 @@ const PAYLOAD_TYPE_VARIABLE = 'VAR';
 const PAYLOAD_TYPE_VARIABLE_DESCRIPTION = 'VAD';
 const PAYLOAD_TYPE_VARIABLE_CONTAINER = 'VAC';
 const PAYLOAD_TYPE_VARIABLE_REGISTRY_REQUEST = 'VRR';
+const PAYLOAD_TYPE_MESSAGE = 'MSG';
 
 const TYPE_BOOLEAN = 'boolean';
 const TYPE_NUMBER = 'number';
@@ -30,6 +31,9 @@ export class UnityConnection extends Driver<NetworkUDP> {
 
     private typesByName: Dictionary<string> = {};
     private variablesByName: Dictionary<BlocksVariable> = {};
+
+    private mMessage: string = '';
+    private mMessageClearTimer?: CancelablePromise<void>;
 
 	public constructor(private socket: NetworkUDP) {
 		super(socket);
@@ -53,8 +57,36 @@ export class UnityConnection extends Driver<NetworkUDP> {
                     var bv : BlocksVariable = JSON.parse(json);
                     this.updateVariable(bv);
                 break;
+                case PAYLOAD_TYPE_MESSAGE:
+                    var msg = message.text.substr(PAYLOAD_TYPE_MESSAGE.length);
+                    this.message = msg;
+                break;
             }
 		});
+	}
+
+    // copied from UDP_Input
+    @property("The most recent message", true)
+	public get message(): string {
+		return this.mMessage;
+	}
+	public set message(cmd: string) {
+		this.mMessage = cmd;
+
+		// Cancel and clear out any existing timer
+		if (this.mMessageClearTimer) {
+			this.mMessageClearTimer.cancel();
+			this.mMessageClearTimer = undefined;
+		}
+
+		// If this was a non-empty command, set up to clear it after some time
+		if (cmd) {
+			this.mMessageClearTimer = wait(300);
+			this.mMessageClearTimer.then(()=> {
+				this.mMessageClearTimer = undefined; // Now taken
+				this.message = '';
+			});
+		}
 	}
 
 	/**

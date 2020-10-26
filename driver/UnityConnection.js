@@ -28,6 +28,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
     var PAYLOAD_TYPE_VARIABLE_DESCRIPTION = 'VAD';
     var PAYLOAD_TYPE_VARIABLE_CONTAINER = 'VAC';
     var PAYLOAD_TYPE_VARIABLE_REGISTRY_REQUEST = 'VRR';
+    var PAYLOAD_TYPE_MESSAGE = 'MSG';
     var TYPE_BOOLEAN = 'boolean';
     var TYPE_NUMBER = 'number';
     var TYPE_STRING = 'string';
@@ -39,6 +40,7 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
             _this.socket = socket;
             _this.typesByName = {};
             _this.variablesByName = {};
+            _this.mMessage = '';
             _this.sendText(PAYLOAD_TYPE_VARIABLE_REGISTRY_REQUEST);
             socket.subscribe('textReceived', function (sender, message) {
                 var text = message.text;
@@ -56,10 +58,36 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
                         var bv = JSON.parse(json);
                         _this.updateVariable(bv);
                         break;
+                    case PAYLOAD_TYPE_MESSAGE:
+                        var msg = message.text.substr(PAYLOAD_TYPE_MESSAGE.length);
+                        _this.message = msg;
+                        break;
                 }
             });
             return _this;
         }
+        Object.defineProperty(UnityConnection.prototype, "message", {
+            get: function () {
+                return this.mMessage;
+            },
+            set: function (cmd) {
+                var _this = this;
+                this.mMessage = cmd;
+                if (this.mMessageClearTimer) {
+                    this.mMessageClearTimer.cancel();
+                    this.mMessageClearTimer = undefined;
+                }
+                if (cmd) {
+                    this.mMessageClearTimer = wait(300);
+                    this.mMessageClearTimer.then(function () {
+                        _this.mMessageClearTimer = undefined;
+                        _this.message = '';
+                    });
+                }
+            },
+            enumerable: false,
+            configurable: true
+        });
         UnityConnection.prototype.isOfTypeName = function (typeName) {
             return typeName === "UnityConnection" ? this : null;
         };
@@ -172,6 +200,11 @@ define(["require", "exports", "system_lib/Driver", "system_lib/Metadata"], funct
         UnityConnection.prototype.sendText = function (toSend) {
             this.socket.sendText(toSend);
         };
+        __decorate([
+            Metadata_1.property("The most recent message", true),
+            __metadata("design:type", String),
+            __metadata("design:paramtypes", [String])
+        ], UnityConnection.prototype, "message", null);
         UnityConnection = __decorate([
             Metadata_1.driver('NetworkUDP', { port: 12543 }),
             __metadata("design:paramtypes", [Object])
