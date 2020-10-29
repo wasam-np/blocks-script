@@ -2,7 +2,7 @@
 	Blocks Monitor
 
  */
-const VERSION: string = '0.5.2';
+const VERSION: string = '0.6.0';
 
 import { PJLinkPlus } from 'driver/PJLinkPlus';
 import { Network, NetworkTCP, NetworkUDP } from 'system/Network';
@@ -25,6 +25,14 @@ const HEARTBEAT_INTERVAL = 60 * 5;
 const DEBUG = false;
 const CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
 
+enum LogLevel {
+    Fatal = 50000,
+    Error = 40000,
+    Warning = 30000,
+    Info = 20000,
+    Debug = 10000,
+}
+
 export class BlocksMonitor extends Script {
 
 
@@ -37,6 +45,8 @@ export class BlocksMonitor extends Script {
 	public static instance: BlocksMonitor;
 
 	private static settings: BlocksMonitorSettings;
+
+    private static logLevel: LogLevel = LogLevel.Info;
 
 	public constructor(env: ScriptEnv) {
 		super(env);
@@ -53,6 +63,15 @@ export class BlocksMonitor extends Script {
 			this.heartbeatLoop();
 		});
 	}
+
+    @callable('log message')
+    public log(
+        @parameter('info message') message: string,
+        @parameter('log level, defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')')
+        level?: number,
+    ): void {
+        BlocksMonitor.sendLogMessage('.', level ? level : LogLevel.Info, message);
+    }
 
 	@callable('report installation startup')
 	public reportStartup(
@@ -221,48 +240,38 @@ export class BlocksMonitor extends Script {
 			if (DEBUG && response.status != 200) console.log(response.status + ': ' + response.data);
 		});
 	}
-	private static sendDeviceMonitorChallenge(monitor: DeviceMonitor, challenge: IDeviceChallenge) {
-		var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path + '/challenge';
-		var json = JSON.stringify(challenge);
-		BlocksMonitor.sendJSON(url, json).then((response: Response) => {
-			if (DEBUG && response.status != 200) console.log(response.status + ': ' + response.data);
-		});
-	}
+    private static sendLogMessage(origin: string, level: LogLevel, message: string): void {
+        if (level < this.logLevel) return;
+        const url = BlocksMonitor.settings.blocksMonitorServerURL + '/log/' + origin;
+        const logMessage: ILogMessage = { message: message, level: level, timestamp: new Date() }
+        const json = JSON.stringify(logMessage);
+        BlocksMonitor.sendJSON(url, json);
+    }
 
 	public static reportConnectionChange(monitor: DeviceMonitor, connected: boolean): void {
-		if (!connected && BlocksMonitor.installationIsUp) {
-			// connection loss during installation up: might be of interest
+		if (!connected && this.installationIsUp) {
 			if (DEBUG) console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
 		}
-		BlocksMonitor.sendDeviceMonitorStatus(monitor);
+		this.sendDeviceMonitorStatus(monitor);
 	}
 	public static reportPowerChange(monitor: DeviceMonitor, power: boolean): void {
-		if (!power && BlocksMonitor.installationIsUp) {
-			// power off during installation up: might be of interest
+		if (!power && this.installationIsUp) {
 			if (DEBUG) console.log(monitor.path + ' lost power during installation run (' + power + ')');
 		}
-		BlocksMonitor.sendDeviceMonitorStatus(monitor);
+		this.sendDeviceMonitorStatus(monitor);
 	}
-	public static reportStatusChange(monitor: DeviceMonitor): void {
-		BlocksMonitor.sendDeviceMonitorStatus(monitor);
-	}
-	public static reportWarning(monitor: DeviceMonitor, text?: string): void {
-		this.sendDeviceMonitorChallenge(monitor, {
-			state: ChallengeState.Warning,
-			text: text,
-			timestamp: new Date()
-		});
-	}
-	public static reportError(monitor: DeviceMonitor, text?: string): void {
-		this.sendDeviceMonitorChallenge(monitor, {
-			state: ChallengeState.Error,
-			text: text,
-			timestamp: new Date()
-		});
-	}
+	public static reportStatusChange(monitor: DeviceMonitor): void { this.sendDeviceMonitorStatus(monitor); }
+
+	public static reportWarning(monitor: DeviceMonitor, text: string): void { this.sendWarningMessage(monitor.path, text); }
+	public static reportError(monitor: DeviceMonitor, text: string): void { this.sendErrorMessage(monitor.path, text); }
+
+    public static sendDebugMessage(origin: string, text: string): void { this.sendLogMessage(origin, LogLevel.Debug, text); }
+    public static sendInfoMessage(origin: string, text: string): void { this.sendLogMessage(origin, LogLevel.Info, text); }
+    public static sendWarningMessage(origin: string, text: string): void { this.sendLogMessage(origin, LogLevel.Warning, text); }
+    public static sendErrorMessage(origin: string, text: string): void { this.sendLogMessage(origin, LogLevel.Error, text); }
+    public static sendFatalMessage(origin: string, text: string): void { this.sendLogMessage(origin, LogLevel.Fatal, text); }
 
 	/** SERVER TALK **/
-
 	private static sendJSON(url: string, jsonContent: string): Promise<Response> {
 		if (DEBUG) console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 160) + '")');
 		var request = SimpleHTTP.newRequest(url);
@@ -344,10 +353,10 @@ enum ChallengeState {
 	Error = 'error',
 	Unknown = 'unknown',
 }
-interface IDeviceChallenge extends IMessageBase {
-	state: ChallengeState,
-	text: string,
-	timestamp: Date,
+// General logging
+interface ILogMessage extends IMessageBase {
+    level: LogLevel;
+    message: string;
 }
 // DATA interfaces
 interface IDeviceDataContainer {
@@ -365,8 +374,16 @@ interface IPJLinkPlusData extends IDevideData {
 	manufactureName: string;
 	productName: string;
 	otherInformation: string;
+    errorStatus: string;
 	serialNumber: string;
 	softwareVersion: string;
+    lampCount: number;
+    lampActive?: boolean[];
+    lampHours?: number[];
+    lampReplacementModelNumber?: string;
+    hasFilter: boolean;
+    filterUsageTime?: number;
+    filterReplacementModelNumber?: string;
 }
 interface ISpotData extends IDevideData {
 	address: string;
@@ -474,19 +491,20 @@ class PJLinkPlusMonitor extends NetworkProjectorMonitor {
 			manufactureName: this.pjLinkPlus.manufactureName,
 			productName: this.pjLinkPlus.productName,
 			otherInformation: this.pjLinkPlus.otherInformation,
+            errorStatus: this.pjLinkPlus.errorStatus,
 			serialNumber: this.pjLinkPlus.serialNumber,
 			softwareVersion: this.pjLinkPlus.softwareVersion,
+            lampCount: this.pjLinkPlus.lampCount,
+            lampActive: [this.pjLinkPlus.lampOneActive, this.pjLinkPlus.lampTwoActive, this.pjLinkPlus.lampThreeActive, this.pjLinkPlus.lampFourActive],
+            lampHours: [this.pjLinkPlus.lampOneHours, this.pjLinkPlus.lampTwoHours, this.pjLinkPlus.lampThreeHours, this.pjLinkPlus.lampFourHours],
+            lampReplacementModelNumber: this.pjLinkPlus.lampReplacementModelNumber,
+            hasFilter: this.pjLinkPlus.hasFilter,
+            filterUsageTime: this.pjLinkPlus.filterUsageTime,
+            filterReplacementModelNumber: this.pjLinkPlus.filterReplacementModelNumber,
 		}
 		data.push({ deviceType: DeviceType.PJLinkPlus, deviceData: deviceData });
 	}
-	private handleProblem(hasProblem: boolean): void {
-		if (hasProblem) {
-			// if (this.pjLinkPlus.hasError) {
-			// 	BlocksMonitor.reportError(this, this.pjLinkPlus.errorStatus);
-			// } else if (this.pjLinkPlus.hasWarning) {
-			// 	BlocksMonitor.reportWarning(this, this.pjLinkPlus.errorStatus);
-			// }
-		}
+	private handleProblem(_hasProblem: boolean): void {
 		BlocksMonitor.reportStatusChange(this);
 	}
 }

@@ -27,13 +27,21 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlocksMonitor = void 0;
-    var VERSION = '0.5.2';
+    var VERSION = '0.6.0';
     var split = require("lib/split-string");
     var MS_PER_S = 1000;
     var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
     var HEARTBEAT_INTERVAL = 60 * 5;
     var DEBUG = false;
     var CONFIG_FILE_NAME = 'BlocksMonitor.config.json';
+    var LogLevel;
+    (function (LogLevel) {
+        LogLevel[LogLevel["Fatal"] = 50000] = "Fatal";
+        LogLevel[LogLevel["Error"] = 40000] = "Error";
+        LogLevel[LogLevel["Warning"] = 30000] = "Warning";
+        LogLevel[LogLevel["Info"] = 20000] = "Info";
+        LogLevel[LogLevel["Debug"] = 10000] = "Debug";
+    })(LogLevel || (LogLevel = {}));
     var BlocksMonitor = (function (_super) {
         __extends(BlocksMonitor, _super);
         function BlocksMonitor(env) {
@@ -51,6 +59,9 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             });
             return _this;
         }
+        BlocksMonitor.prototype.log = function (message, level) {
+            BlocksMonitor.sendLogMessage('.', level ? level : LogLevel.Info, message);
+        };
         BlocksMonitor.prototype.reportStartup = function (timeout) {
             var _this = this;
             BlocksMonitor.installationIsStartingUp = true;
@@ -199,45 +210,36 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                     console.log(response.status + ': ' + response.data);
             });
         };
-        BlocksMonitor.sendDeviceMonitorChallenge = function (monitor, challenge) {
-            var url = BlocksMonitor.settings.blocksMonitorServerURL + '/device/' + monitor.path + '/challenge';
-            var json = JSON.stringify(challenge);
-            BlocksMonitor.sendJSON(url, json).then(function (response) {
-                if (DEBUG && response.status != 200)
-                    console.log(response.status + ': ' + response.data);
-            });
+        BlocksMonitor.sendLogMessage = function (origin, level, message) {
+            if (level < this.logLevel)
+                return;
+            var url = BlocksMonitor.settings.blocksMonitorServerURL + '/log/' + origin;
+            var logMessage = { message: message, level: level, timestamp: new Date() };
+            var json = JSON.stringify(logMessage);
+            BlocksMonitor.sendJSON(url, json);
         };
         BlocksMonitor.reportConnectionChange = function (monitor, connected) {
-            if (!connected && BlocksMonitor.installationIsUp) {
+            if (!connected && this.installationIsUp) {
                 if (DEBUG)
                     console.log(monitor.path + ' lost connection during installation run (' + connected + ')');
             }
-            BlocksMonitor.sendDeviceMonitorStatus(monitor);
+            this.sendDeviceMonitorStatus(monitor);
         };
         BlocksMonitor.reportPowerChange = function (monitor, power) {
-            if (!power && BlocksMonitor.installationIsUp) {
+            if (!power && this.installationIsUp) {
                 if (DEBUG)
                     console.log(monitor.path + ' lost power during installation run (' + power + ')');
             }
-            BlocksMonitor.sendDeviceMonitorStatus(monitor);
+            this.sendDeviceMonitorStatus(monitor);
         };
-        BlocksMonitor.reportStatusChange = function (monitor) {
-            BlocksMonitor.sendDeviceMonitorStatus(monitor);
-        };
-        BlocksMonitor.reportWarning = function (monitor, text) {
-            this.sendDeviceMonitorChallenge(monitor, {
-                state: ChallengeState.Warning,
-                text: text,
-                timestamp: new Date()
-            });
-        };
-        BlocksMonitor.reportError = function (monitor, text) {
-            this.sendDeviceMonitorChallenge(monitor, {
-                state: ChallengeState.Error,
-                text: text,
-                timestamp: new Date()
-            });
-        };
+        BlocksMonitor.reportStatusChange = function (monitor) { this.sendDeviceMonitorStatus(monitor); };
+        BlocksMonitor.reportWarning = function (monitor, text) { this.sendWarningMessage(monitor.path, text); };
+        BlocksMonitor.reportError = function (monitor, text) { this.sendErrorMessage(monitor.path, text); };
+        BlocksMonitor.sendDebugMessage = function (origin, text) { this.sendLogMessage(origin, LogLevel.Debug, text); };
+        BlocksMonitor.sendInfoMessage = function (origin, text) { this.sendLogMessage(origin, LogLevel.Info, text); };
+        BlocksMonitor.sendWarningMessage = function (origin, text) { this.sendLogMessage(origin, LogLevel.Warning, text); };
+        BlocksMonitor.sendErrorMessage = function (origin, text) { this.sendLogMessage(origin, LogLevel.Error, text); };
+        BlocksMonitor.sendFatalMessage = function (origin, text) { this.sendLogMessage(origin, LogLevel.Fatal, text); };
         BlocksMonitor.sendJSON = function (url, jsonContent) {
             if (DEBUG)
                 console.log('sendJSON("' + url + '", "' + this.shortenIfNeed(jsonContent, 160) + '")');
@@ -275,6 +277,15 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         BlocksMonitor.monitors = [];
         BlocksMonitor.installationIsStartingUp = false;
         BlocksMonitor.installationIsUp = false;
+        BlocksMonitor.logLevel = LogLevel.Info;
+        __decorate([
+            Metadata_1.callable('log message'),
+            __param(0, Metadata_1.parameter('info message')),
+            __param(1, Metadata_1.parameter('log level, defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')')),
+            __metadata("design:type", Function),
+            __metadata("design:paramtypes", [String, Number]),
+            __metadata("design:returntype", void 0)
+        ], BlocksMonitor.prototype, "log", null);
         __decorate([
             Metadata_1.callable('report installation startup'),
             __param(0, Metadata_1.parameter('max time in seconds for all registered items to get ready (default ' + DEFAULT_STARTUP_TIMEOUT + ' seconds)', true)),
@@ -520,14 +531,20 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 manufactureName: this.pjLinkPlus.manufactureName,
                 productName: this.pjLinkPlus.productName,
                 otherInformation: this.pjLinkPlus.otherInformation,
+                errorStatus: this.pjLinkPlus.errorStatus,
                 serialNumber: this.pjLinkPlus.serialNumber,
                 softwareVersion: this.pjLinkPlus.softwareVersion,
+                lampCount: this.pjLinkPlus.lampCount,
+                lampActive: [this.pjLinkPlus.lampOneActive, this.pjLinkPlus.lampTwoActive, this.pjLinkPlus.lampThreeActive, this.pjLinkPlus.lampFourActive],
+                lampHours: [this.pjLinkPlus.lampOneHours, this.pjLinkPlus.lampTwoHours, this.pjLinkPlus.lampThreeHours, this.pjLinkPlus.lampFourHours],
+                lampReplacementModelNumber: this.pjLinkPlus.lampReplacementModelNumber,
+                hasFilter: this.pjLinkPlus.hasFilter,
+                filterUsageTime: this.pjLinkPlus.filterUsageTime,
+                filterReplacementModelNumber: this.pjLinkPlus.filterReplacementModelNumber,
             };
             data.push({ deviceType: DeviceType.PJLinkPlus, deviceData: deviceData });
         };
-        PJLinkPlusMonitor.prototype.handleProblem = function (hasProblem) {
-            if (hasProblem) {
-            }
+        PJLinkPlusMonitor.prototype.handleProblem = function (_hasProblem) {
             BlocksMonitor.reportStatusChange(this);
         };
         return PJLinkPlusMonitor;
