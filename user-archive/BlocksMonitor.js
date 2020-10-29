@@ -59,8 +59,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
             });
             return _this;
         }
-        BlocksMonitor.prototype.log = function (message, level) {
-            BlocksMonitor.sendLogMessage('.', level ? level : LogLevel.Info, message);
+        BlocksMonitor.prototype.log = function (message, logLevel) {
+            BlocksMonitor.sendLogMessage('.', logLevel ? logLevel : LogLevel.Info, message);
         };
         BlocksMonitor.prototype.reportStartup = function (timeout) {
             var _this = this;
@@ -280,8 +280,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         BlocksMonitor.logLevel = LogLevel.Info;
         __decorate([
             Metadata_1.callable('log message'),
-            __param(0, Metadata_1.parameter('info message')),
-            __param(1, Metadata_1.parameter('log level, defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')')),
+            __param(0, Metadata_1.parameter('message')),
+            __param(1, Metadata_1.parameter('defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')', true)),
             __metadata("design:type", Function),
             __metadata("design:paramtypes", [String, Number]),
             __metadata("design:returntype", void 0)

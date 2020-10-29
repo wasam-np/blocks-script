@@ -66,11 +66,11 @@ export class BlocksMonitor extends Script {
 
     @callable('log message')
     public log(
-        @parameter('info message') message: string,
-        @parameter('log level, defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')')
-        level?: number,
+        @parameter('message') message: string,
+        @parameter('defaults to info (info >= ' + LogLevel.Info + ', warning >= ' + LogLevel.Warning + ', error >= ' + LogLevel.Error + ')', true)
+        logLevel?: number,
     ): void {
-        BlocksMonitor.sendLogMessage('.', level ? level : LogLevel.Info, message);
+        BlocksMonitor.sendLogMessage('.', logLevel ? logLevel : LogLevel.Info, message);
     }
 
 	@callable('report installation startup')
