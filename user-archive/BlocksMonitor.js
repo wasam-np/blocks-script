@@ -27,7 +27,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.BlocksMonitor = void 0;
-    var VERSION = '0.6.0';
+    var VERSION = '0.6.1';
     var split = require("lib/split-string");
     var MS_PER_S = 1000;
     var DEFAULT_STARTUP_TIMEOUT = 60 * 10;
@@ -610,15 +610,8 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
                 else
                     BlocksMonitor.reportWarning(_this, message.text);
             });
-            cluster.subscribe('watchout', function (_sender, message) {
-                var stateChanged = false;
-                switch (message.type) {
-                    case 'ShowName':
-                        stateChanged = true;
-                        break;
-                }
-                if (stateChanged)
-                    BlocksMonitor.reportStatusChange(_this);
+            _this.powerAccessor = BlocksMonitor.instance.getProperty(_this.path + '.showName', function (_showName) {
+                BlocksMonitor.reportStatusChange(_this);
             });
             return _this;
         }
@@ -630,7 +623,7 @@ define(["require", "exports", "system/Network", "system/SimpleHTTP", "system/Sim
         WATCHOUTClusterMonitor.prototype.appendDeviceData = function (data) {
             _super.prototype.appendDeviceData.call(this, data);
             var deviceData = {
-                showName: this.cluster.getShowName()
+                showName: this.cluster.showName,
             };
             data.push({ deviceType: DeviceType.WATCHOUTCluster, deviceData: deviceData });
         };

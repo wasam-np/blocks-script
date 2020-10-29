@@ -2,7 +2,7 @@
 	Blocks Monitor
 
  */
-const VERSION: string = '0.6.0';
+const VERSION: string = '0.6.1';
 
 import { PJLinkPlus } from 'driver/PJLinkPlus';
 import { Network, NetworkTCP, NetworkUDP } from 'system/Network';
@@ -541,6 +541,7 @@ class SpotMonitor extends DeviceMonitor {
 }
 class WATCHOUTClusterMonitor extends DeviceMonitor {
 	readonly cluster: WATCHOUTCluster;
+    readonly showNameAccessor: PropertyAccessor<string>;
 	public constructor(path: string, cluster: WATCHOUTCluster) {
 		super(path);
 		this.cluster = cluster;
@@ -548,21 +549,15 @@ class WATCHOUTClusterMonitor extends DeviceMonitor {
 			if (message.type == 'Error') BlocksMonitor.reportError(this, message.text);
 			else BlocksMonitor.reportWarning(this, message.text);
 		});
-		cluster.subscribe('watchout', (_sender: WATCHOUTCluster, message)=>{
-			var stateChanged = false;
-			switch(message.type) {
-				case 'ShowName':
-					stateChanged = true;
-					break;
-			}
-			if (stateChanged) BlocksMonitor.reportStatusChange(this);
+        this.powerAccessor = BlocksMonitor.instance.getProperty<boolean>(this.path + '.showName', (_showName) => {
+			BlocksMonitor.reportStatusChange(this);
 		});
 	}
 	public get deviceType(): string { return DeviceType.WATCHOUTCluster; }
 	protected appendDeviceData(data: IDeviceDataContainer[]) {
 		super.appendDeviceData(data);
 		var deviceData: IWATCHOUTClusterData = {
-			showName: this.cluster.getShowName()
+			showName: this.cluster.showName,
 		}
 		data.push({ deviceType: DeviceType.WATCHOUTCluster, deviceData: deviceData });
 	}
