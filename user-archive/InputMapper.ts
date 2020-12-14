@@ -214,11 +214,9 @@ class InputMapping {
 		this.value = this.settings.wholeNumbersOut ? Math.floor(newValue) : newValue;
 		if (previousValue != this.value) {
 			this.deltaValue = this.value - previousValue;
-			while (this.deltaValue > this.scaledRangeHalf) {
-				this.deltaValue -= this.scaledRange;
-			}
-			while (this.deltaValue < -this.scaledRangeHalf) {
-				this.deltaValue += this.scaledRange;
+			if (this.settings.valueLoop) {
+				while (this.deltaValue > this.scaledRangeHalf) this.deltaValue -= this.scaledRange;
+				while (this.deltaValue < -this.scaledRangeHalf) this.deltaValue += this.scaledRange;
 			}
 			InputMapper.instance.propertyChanged(this.settings.ioAlias);
 		}
